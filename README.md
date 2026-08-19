@@ -6,6 +6,28 @@ from cycle history and, eventually, wearable data.
 This project is for personal experimentation and is not a medical device. It
 must not be used for diagnosis or medical decision-making.
 
+## Motivation
+
+My cycles vary enough that planning around a single expected date is difficult,
+even though the variation is not extreme. In my own use, apps such as Apple
+Health and Oura may show possible period-start windows spanning roughly 7 to 14
+days, while some peers with more regular cycles report windows closer to 5 to 7
+days. This is an anecdotal observation, not a controlled comparison of those
+products.
+
+A narrower, trustworthy window would make it easier to plan travel, events, and
+other activities in advance. The goal is not to create false certainty or force
+a narrow estimate: any reduction in window size must retain honest, measured
+coverage of the actual start date.
+
+## Project status
+
+The project is currently building Phase A: a history-only model that predicts
+the next cycle length without using future information. See the
+[project roadmap](docs/roadmap.md) for milestone progress and the
+[Phase A design](docs/design/001-cycle-history-model.md) for the prediction,
+data, and evaluation contracts.
+
 ## Repository toolchain
 
 The project uses Python 3.12 and an installable `src/` package layout. Tool and
