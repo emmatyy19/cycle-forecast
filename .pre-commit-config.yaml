@@ -1,0 +1,32 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Ruff lint
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+
+      - id: ruff-format
+        name: Ruff format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+
+      - id: pyright
+        name: Pyright
+        entry: uv run pyright
+        language: system
+        pass_filenames: false
+
+      - id: pytest
+        name: Pytest (affected tests)
+        entry: uv run pytest --testmon -q
+        language: system
+        pass_filenames: false
+
+      - id: strip-notebook-output
+        name: Strip notebook output
+        entry: uv run nbstripout
+        language: system
+        files: '\.ipynb$'

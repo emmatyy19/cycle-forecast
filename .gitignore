@@ -1,10 +1,57 @@
-# Python-generated files
+# Python
 __pycache__/
-*.py[oc]
-build/
+*.py[cod]
+*.so
+*.egg-info/
 dist/
-wheels/
-*.egg-info
+build/
 
 # Virtual environments
-.venv
+.venv/
+venv/
+
+# Tool caches and reports
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.coverage
+coverage.xml
+htmlcov/
+.testmondata
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE / OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Environment variables / credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Private health data
+data/raw/
+data/private/
+data/interim/
+data/processed/
+
+# Local model / experiment artifacts
+models/
+artifacts/
+mlruns/
+mlartifacts/
+
+# Logs / temporary output
+logs/
+tmp/
+*.log
+
+# Local guidance only
+CYCLE_FORECAST_MLE_PROJECT_PLAN.md
