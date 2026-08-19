@@ -6,6 +6,14 @@ from cycle history and, eventually, wearable data.
 This project is for personal experimentation and is not a medical device. It
 must not be used for diagnosis or medical decision-making.
 
+## Project status
+
+The project is currently building Phase A: a history-only model that predicts
+the next cycle length without using future information. See the
+[project roadmap](docs/roadmap.md) for milestone progress and the
+[Phase A design](docs/design/001-cycle-history-model.md) for the prediction,
+data, and evaluation contracts.
+
 ## Repository toolchain
 
 The project uses Python 3.12 and an installable `src/` package layout. Tool and

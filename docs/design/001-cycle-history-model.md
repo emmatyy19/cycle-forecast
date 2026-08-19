@@ -1,0 +1,188 @@
+# Design 001: Cycle-History Forecasting
+
+## Status
+
+Accepted
+
+## Context
+
+Phase A establishes an end-to-end forecasting and evaluation pipeline using the
+smallest useful input: historical period-start dates. It provides the baseline
+that future wearable-informed models must beat and creates the project's core
+data, feature, training, and evaluation contracts.
+
+This project is for learning and personal experimentation. It is not a medical
+device and must not be used for diagnosis or medical decision-making.
+
+## Problem statement
+
+Given all cycle information available at the start of the current cycle,
+predict the length of that cycle in whole days. Adding the predicted length to
+the current period start produces a predicted next period-start date.
+
+## Goals
+
+- Define a clear target with an explicit prediction-time cutoff.
+- Establish simple history-based baselines before training ML models.
+- Prevent future information from influencing past predictions.
+- Evaluate forecasts in units that are understandable to a user: days.
+- Make training and evaluation reproducible from versioned code and
+  configuration.
+- Preserve the privacy of all personal health data and derived datasets.
+
+## Non-goals
+
+- Diagnosing medical conditions or recommending care.
+- Predicting fertility, ovulation, or pregnancy.
+- Using wearable observations in Phase A.
+- Serving a public API before the prediction contract is stable.
+- Adding deep learning or operational infrastructure without evidence that it
+  solves a current problem.
+
+## Prediction contract
+
+For cycle `t`:
+
+```text
+target_t = next_period_start_t - period_start_t
+```
+
+The target is `cycle_length_days`, represented as a positive integer. The
+prediction cutoff is the start of cycle `t`. Features may use period starts and
+completed cycle lengths strictly before or at that cutoff, but may not use
+observations collected during the target cycle.
+
+The initial prediction output contains:
+
+- predicted cycle length in days
+- predicted next period-start date
+- model and configuration version
+
+Prediction intervals or calibrated distributions will be added only after the
+point-forecast evaluation is reliable.
+
+## Data contract
+
+The private raw input is a one-column CSV stored locally at
+`data/raw/periods.csv`:
+
+```csv
+period_start
+2011-03-14
+2011-04-11
+2011-05-10
+```
+
+The loader must reject malformed dates, missing values, duplicates,
+nonchronological rows, unexpected columns, and explicitly defined implausible
+gaps. It must not silently sort, deduplicate, fill, or repair records.
+
+Only invented synthetic examples may be committed. Raw, private, interim, and
+processed personal datasets remain ignored by Git because transformed
+single-person health data is still identifying.
+
+## Dataset construction
+
+Each pair of consecutive period starts creates one completed cycle:
+
+```text
+cycle_start  next_period_start  cycle_length_days
+2011-03-14   2011-04-11         28
+2011-04-11   2011-05-10         29
+```
+
+The most recent period start has no target until the following period begins and
+is excluded from supervised training rows.
+
+Every derived dataset should carry or be accompanied by a deterministic
+fingerprint based on its validated inputs and transformation version.
+
+## Baselines
+
+The initial evaluation compares at least:
+
+- previous completed cycle length
+- rolling mean over recent completed cycles
+- rolling median over recent completed cycles
+- expanding statistic over all prior completed cycles
+
+An ML model is adopted only when it improves meaningfully over the strongest
+simple baseline under the same temporal evaluation.
+
+## Features
+
+Initial candidate features include lagged completed cycle lengths and rolling or
+expanding statistics computed using historical rows only. Feature construction
+must be shared between training and prediction code.
+
+Calendar or trend features may be considered later, but only when their value and
+prediction-time availability are explicit.
+
+## Evaluation
+
+Random train/test splits are prohibited. Model selection uses walk-forward
+validation:
+
+```text
+train on rows before t → evaluate row t → advance one row
+```
+
+Before serious tuning begins, the most recent block of complete cycles will be
+reserved as an untouched final holdout. The holdout rule must be recorded before
+it is used and must not be repeatedly consulted during model selection.
+
+The primary metric is mean absolute error in days. Supporting metrics include:
+
+- median absolute error
+- root mean squared error when useful
+- percentage of forecasts within ±1, ±2, ±3, and ±5 days
+
+Metrics are reported for every baseline and model over identical evaluation
+windows.
+
+## Reproducibility
+
+A training run should record:
+
+- versioned TOML configuration
+- Git commit
+- Python and dependency versions from `uv.lock`
+- validated-data fingerprint
+- feature definition and cutoff policy
+- random seed, when an algorithm uses randomness
+- validation windows and final metrics
+- serialized model version, when an artifact is produced
+
+MLflow or another experiment tracker may be introduced when filesystem-based run
+records become difficult to compare. It is not required for the first baseline.
+
+## Alternatives considered
+
+### Predict the next date directly
+
+Predicting cycle length is preferred because it provides a stable numeric target
+and converts cleanly to a date using the known current period start.
+
+### Begin with wearable data
+
+Deferred to Phase B. A history-only system is easier to validate and supplies a
+necessary benchmark for measuring the incremental value of wearables.
+
+### Random train/test split
+
+Rejected because future cycles could influence models evaluated on earlier
+cycles, producing optimistic and operationally invalid results.
+
+### Start with a complex model
+
+Rejected until rolling and expanding baselines establish what additional model
+complexity must improve upon.
+
+## Open questions
+
+- What minimum history is required before producing a forecast?
+- Which rolling windows should be fixed before final evaluation?
+- How large should the final temporal holdout be for the available history?
+- Which data-quality thresholds should warn versus reject?
+- What uncertainty representation is most useful after point forecasts are
+  established?
