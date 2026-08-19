@@ -45,6 +45,7 @@ at the beginning of the current cycle. See the
 - [ ] Train the first regularized regression model
 - [ ] Compare every model against the non-ML baselines
 - [ ] Quantify prediction uncertainty
+- [ ] Evaluate prediction-window width and empirical coverage together
 
 ### Reproducibility and delivery
 

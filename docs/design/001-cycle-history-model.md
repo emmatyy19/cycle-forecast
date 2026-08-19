@@ -14,6 +14,22 @@ data, feature, training, and evaluation contracts.
 This project is for learning and personal experimentation. It is not a medical
 device and must not be used for diagnosis or medical decision-making.
 
+## User need and motivation
+
+The project is motivated by personal cycle variability that makes advance
+planning difficult. In personal use, Apple Health and Oura may present possible
+period-start windows spanning roughly 7 to 14 days. Anecdotally, peers with more
+regular cycles have described windows closer to 5 to 7 days. These observations
+are not a controlled product comparison and do not establish how either product
+generates its forecasts.
+
+The practical objective is to determine whether long-term personal history and,
+later, daily wearable signals can produce a narrower useful window for planning
+travel, events, and other activities. A narrower interval is valuable only when
+it remains calibrated: the project must measure how often the actual start falls
+inside the predicted window and must not trade honest uncertainty for apparent
+precision.
+
 ## Problem statement
 
 Given all cycle information available at the start of the current cycle,
@@ -26,6 +42,7 @@ the current period start produces a predicted next period-start date.
 - Establish simple history-based baselines before training ML models.
 - Prevent future information from influencing past predictions.
 - Evaluate forecasts in units that are understandable to a user: days.
+- Evaluate uncertainty using both interval width and empirical coverage.
 - Make training and evaluation reproducible from versioned code and
   configuration.
 - Preserve the privacy of all personal health data and derived datasets.
@@ -59,7 +76,8 @@ The initial prediction output contains:
 - model and configuration version
 
 Prediction intervals or calibrated distributions will be added only after the
-point-forecast evaluation is reliable.
+point-forecast evaluation is reliable. Their evaluation must report both how
+narrow the intervals are and how frequently they contain the actual start date.
 
 ## Data contract
 
@@ -186,3 +204,5 @@ complexity must improve upon.
 - Which data-quality thresholds should warn versus reject?
 - What uncertainty representation is most useful after point forecasts are
   established?
+- What coverage target provides a useful balance between planning value and
+  honest uncertainty?
