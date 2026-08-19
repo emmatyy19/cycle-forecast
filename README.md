@@ -67,7 +67,7 @@ dependency cache. Later runs select tests affected by changed code. Run
 `uv run pytest` without `--testmon` whenever you want the complete suite.
 
 GitHub Actions runs the full suite with branch coverage on every pull request
-and every push to `master`. It also verifies formatting, linting, strict types,
+and every push to `main`. It also verifies formatting, linting, strict types,
 the lockfile, and package builds in a clean Linux environment.
 
 ## Test layout
