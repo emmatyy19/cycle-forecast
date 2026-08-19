@@ -15,10 +15,10 @@ These instructions apply to the entire repository.
 
 ## Git and pull-request workflow
 
-- Treat `master` as a protected integration branch. Do not make feature, fix,
-  documentation, or maintenance commits directly on `master`.
+- Treat `main` as a protected integration branch. Do not make feature, fix,
+  documentation, or maintenance commits directly on `main`.
 - Before starting a coherent change, inspect the branch and working tree. Start
-  from an up-to-date, clean `master`, then create a focused branch such as
+  from an up-to-date, clean `main`, then create a focused branch such as
   `feat/<topic>`, `fix/<topic>`, `docs/<topic>`, or `chore/<topic>`.
 - Never discard, overwrite, relocate, or include unrelated working-tree changes.
   If pre-existing changes make creating a clean branch unsafe, stop and ask for
@@ -26,7 +26,7 @@ These instructions apply to the entire repository.
 - Keep commits focused and use descriptive conventional-commit messages. Stage
   only files that belong to the current change.
 - Push the branch and open a pull request instead of pushing changes directly to
-  `master`. The pull request should summarize the change, its motivation, and
+  `main`. The pull request should summarize the change, its motivation, and
   the verification performed.
 - Let the complete GitHub Actions workflow run on the pull request. Do not merge
   until every required check passes; fix failures on the same branch and rerun
