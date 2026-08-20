@@ -61,7 +61,7 @@ the current period start produces a predicted next period-start date.
 For cycle `t`:
 
 ```text
-target_t = next_period_start_t - period_start_t
+target_t = next_cycle_start_date_t - cycle_start_date_t
 ```
 
 The target is `cycle_length_days`, represented as a positive integer. The
@@ -81,19 +81,23 @@ narrow the intervals are and how frequently they contain the actual start date.
 
 ## Data contract
 
-The private raw input is a one-column CSV stored locally at
-`data/raw/periods.csv`:
+The private raw input is a two-column CSV stored locally at
+`data/raw/cycle_history.csv`:
 
 ```csv
-period_start
-2011-03-14
-2011-04-11
-2011-05-10
+cycle_start_date,period_length_days
+2024-01-03,6
+2024-01-31,7
 ```
 
-The loader must reject malformed dates, missing values, duplicates,
+`cycle_start_date` is the first day of a period and `period_length_days` is the
+number of days in that period. The loader must reject malformed dates,
+non-positive or non-integer period lengths, missing values, duplicates,
 nonchronological rows, unexpected columns, and explicitly defined implausible
-gaps. It must not silently sort, deduplicate, fill, or repair records.
+gaps. It must also reject a period length that extends beyond the following
+cycle start; this check is unavailable for the newest record until the next
+cycle is recorded. It must not silently sort, deduplicate, fill, or repair
+records.
 
 Only invented synthetic examples may be committed. Raw, private, interim, and
 processed personal datasets remain ignored by Git because transformed
@@ -104,9 +108,9 @@ single-person health data is still identifying.
 Each pair of consecutive period starts creates one completed cycle:
 
 ```text
-cycle_start  next_period_start  cycle_length_days
-2011-03-14   2011-04-11         28
-2011-04-11   2011-05-10         29
+cycle_start_date  next_cycle_start_date  cycle_length_days
+2011-03-14        2011-04-11             28
+2011-04-11        2011-05-10             29
 ```
 
 The most recent period start has no target until the following period begins and

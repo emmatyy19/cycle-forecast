@@ -39,6 +39,21 @@ These instructions apply to the entire repository.
 
 ## Python standards
 
+- Follow modern Python 3.12 best practices. Prefer clear standard-library
+  features and current language idioms over legacy compatibility patterns or
+  unnecessary third-party abstractions.
+- Choose data structures deliberately and justify non-obvious choices based on
+  the domain's semantics, mutability, validation, serialization, and performance
+  needs. Prefer the simplest representation that preserves the required
+  invariants: use plain built-in collections for transient data, frozen/slotted
+  dataclasses for immutable domain records when appropriate, and validation
+  frameworks such as Pydantic only when their boundary-validation or
+  serialization features provide concrete value. Do not use tuple-like records
+  when positional behavior is undesirable.
+- Use modern type syntax. Use built-in generics such as `list[str]`,
+  `dict[str, int]`, and `tuple[int, ...]`; use `X | Y` unions; and use
+  `X | None` instead of `Optional[X]`. Avoid deprecated `typing` aliases when
+  Python 3.12 provides a native equivalent.
 - Fully annotate every function and method, including parameters and return
   types. Do not introduce untyped functions to silence the type checker.
 - Write a NumPy-style docstring for every function, method, class, and module.
