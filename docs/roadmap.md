@@ -22,11 +22,11 @@ at the beginning of the current cycle. See the
 
 ### Data foundation
 
-- [ ] Define and validate the raw period-start CSV contract
-- [ ] Add safe synthetic data for tests and examples
-- [ ] Build a typed cycle-length dataset
-- [ ] Record reproducible dataset fingerprints
-- [ ] Document every cleaning and exclusion decision
+- [x] Define and validate the raw period-start CSV contract
+- [x] Add safe synthetic data for tests and examples
+- [x] Build a typed cycle-length dataset
+- [x] Record reproducible dataset fingerprints
+- [x] Document every cleaning and exclusion decision
 
 ### Exploration and baselines
 
