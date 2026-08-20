@@ -1,9 +1,15 @@
 """Load and validate raw cycle-history data."""
 
 import csv
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
+from hashlib import sha256
+from itertools import pairwise
 from pathlib import Path
+
+CYCLE_DATASET_TRANSFORMATION_VERSION = "cycle-dataset-v1"
+"""Semantic version of the cycle-dataset construction rules."""
 
 
 class CycleHistoryValidationError(ValueError):
@@ -24,6 +30,139 @@ class CycleHistoryRecord:
 
     cycle_start_date: date
     period_length_days: int
+
+
+@dataclass(frozen=True, slots=True)
+class CycleDatasetRow:
+    """Represent one completed cycle and its supervised target.
+
+    Parameters
+    ----------
+    cycle_start_date
+        Start date known at the prediction cutoff.
+    next_cycle_start_date
+        Observed start date that completes the cycle.
+    cycle_length_days
+        Target number of days between the two consecutive starts.
+    """
+
+    cycle_start_date: date
+    next_cycle_start_date: date
+    cycle_length_days: int
+
+
+@dataclass(frozen=True, slots=True)
+class CycleDataset:
+    """Contain completed-cycle rows and their reproducibility metadata.
+
+    Parameters
+    ----------
+    rows
+        Immutable supervised rows in chronological order.
+    transformation_version
+        Semantic version of the rules used to construct the rows.
+    fingerprint
+        SHA-256 identifier of the validated inputs and transformation version.
+    """
+
+    rows: tuple[CycleDatasetRow, ...]
+    transformation_version: str
+    fingerprint: str
+
+
+def fingerprint_cycle_dataset(
+    records: Sequence[CycleHistoryRecord],
+    *,
+    transformation_version: str,
+) -> str:
+    """Fingerprint validated inputs under a dataset transformation version.
+
+    Parameters
+    ----------
+    records
+        Validated cycle-history records in chronological order.
+    transformation_version
+        Non-empty semantic identifier for the dataset construction rules. It
+        must not contain line breaks.
+
+    Returns
+    -------
+    str
+        SHA-256 fingerprint prefixed with ``sha256:``.
+
+    Raises
+    ------
+    ValueError
+        If ``transformation_version`` is empty or contains a line break.
+
+    Notes
+    -----
+    The canonical payload includes a domain identifier, transformation version,
+    fixed field names, and every validated input record. File paths and original
+    CSV formatting are deliberately excluded.
+    """
+    if (
+        not transformation_version
+        or "\n" in transformation_version
+        or "\r" in transformation_version
+    ):
+        message = "transformation_version must be non-empty and contain no line breaks"
+        raise ValueError(message)
+
+    digest = sha256()
+    digest.update(b"cycle-forecast:cycle-dataset\n")
+    digest.update(f"transformation_version={transformation_version}\n".encode())
+    digest.update(b"cycle_start_date,period_length_days\n")
+    for record in records:
+        canonical_record = (
+            f"{record.cycle_start_date.isoformat()},{record.period_length_days}\n"
+        )
+        digest.update(canonical_record.encode())
+    return f"sha256:{digest.hexdigest()}"
+
+
+def build_cycle_dataset(
+    records: Sequence[CycleHistoryRecord],
+) -> CycleDataset:
+    """Construct deterministic targets from validated cycle history.
+
+    Each consecutive pair of records produces exactly one completed-cycle row.
+    The final record is retained only as the next start for the preceding row;
+    it cannot produce its own row because its target is not yet known.
+
+    Parameters
+    ----------
+    records
+        Validated cycle-history records in strictly increasing date order.
+
+    Returns
+    -------
+    CycleDataset
+        Immutable rows and reproducibility metadata.
+
+    Notes
+    -----
+    This transformation does not sort, deduplicate, or otherwise repair input.
+    Call :func:`load_cycle_history` to establish the input invariants first.
+    """
+    rows = tuple(
+        CycleDatasetRow(
+            cycle_start_date=current.cycle_start_date,
+            next_cycle_start_date=following.cycle_start_date,
+            cycle_length_days=(
+                following.cycle_start_date - current.cycle_start_date
+            ).days,
+        )
+        for current, following in pairwise(records)
+    )
+    return CycleDataset(
+        rows=rows,
+        transformation_version=CYCLE_DATASET_TRANSFORMATION_VERSION,
+        fingerprint=fingerprint_cycle_dataset(
+            records,
+            transformation_version=CYCLE_DATASET_TRANSFORMATION_VERSION,
+        ),
+    )
 
 
 def load_cycle_history(

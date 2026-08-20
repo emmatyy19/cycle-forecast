@@ -42,3 +42,30 @@ Requirements:
 
 Validation failures require manual review. The loader does not sort, deduplicate,
 fill, or otherwise silently modify questionable records.
+
+The complete rationale for every current validation, non-cleaning, and
+supervised-row exclusion rule is recorded in the
+[cleaning and exclusion policy](../docs/data/cleaning-and-exclusions.md).
+
+## Derived dataset provenance
+
+Dataset construction preserves validated chronological order and creates one
+target from each consecutive pair of starts. The newest start cannot produce a
+target until another start is observed, so it is excluded as a supervised row.
+
+Every constructed dataset carries a transformation version and a SHA-256
+fingerprint. The fingerprint's canonical UTF-8 payload contains:
+
+- the `cycle-forecast:cycle-dataset` domain identifier
+- the transformation version
+- fixed input field names
+- every validated start date and period length in chronological order
+
+File paths and original CSV formatting are excluded, so equivalent validated
+records have the same identity. Any input value, record order, or transformation
+version change produces a different identity. The transformation version must be
+incremented whenever the construction rules or row meaning changes; equivalent
+refactoring does not require a version increment.
+
+A fingerprint identifies private data but does not anonymize it. Personal input,
+derived rows, and their provenance metadata must remain private.

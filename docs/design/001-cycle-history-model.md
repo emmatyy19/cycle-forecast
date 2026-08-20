@@ -99,6 +99,10 @@ cycle start; this check is unavailable for the newest record until the next
 cycle is recorded. It must not silently sort, deduplicate, fill, or repair
 records.
 
+The operational rationale for every current rejection, non-cleaning, and row
+exclusion rule is maintained in the
+[cleaning and exclusion policy](../data/cleaning-and-exclusions.md).
+
 Only invented synthetic examples may be committed. Raw, private, interim, and
 processed personal datasets remain ignored by Git because transformed
 single-person health data is still identifying.
