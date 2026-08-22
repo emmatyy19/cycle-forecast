@@ -15,6 +15,12 @@ from cycle_forecast.forecasting.baselines import (
     forecast_with_rolling_median,
     round_cycle_length_days,
 )
+from cycle_forecast.forecasting.metrics import (
+    ForecastError,
+    ForecastEvaluation,
+    ForecastMetrics,
+    evaluate_forecasts,
+)
 
 __all__ = [
     "EXPANDING_MEAN_BASELINE_NAME",
@@ -25,6 +31,10 @@ __all__ = [
     "ROLLING_MEDIAN_BASELINE_VERSION",
     "CycleLengthForecast",
     "ForecastBatch",
+    "ForecastError",
+    "ForecastEvaluation",
+    "ForecastMetrics",
+    "evaluate_forecasts",
     "forecast_with_expanding_mean",
     "forecast_with_previous_cycle",
     "forecast_with_rolling_mean",
