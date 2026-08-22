@@ -32,9 +32,9 @@ at the beginning of the current cycle. See the
 
 - [x] Explore distributions, trends, variability, and autocorrelation
 - [x] Implement a previous-cycle baseline
-- [ ] Implement rolling-mean baselines
-- [ ] Implement rolling-median baselines
-- [ ] Implement an expanding-history baseline
+- [x] Implement rolling-mean baselines
+- [x] Implement rolling-median baselines
+- [x] Implement an expanding-history baseline
 
 ### Evaluation and modeling
 
