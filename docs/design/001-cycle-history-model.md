@@ -174,6 +174,16 @@ The primary metric is mean absolute error in days. Supporting metrics include:
 Metrics are reported for every baseline and model over identical evaluation
 windows.
 
+Walk-forward comparisons use the chronological intersection of prediction
+cutoffs emitted by every forecaster being compared. This common window prevents
+a method with a longer minimum-history requirement from being measured over a
+different set of cycles. Forecast batches are fully validated before their
+common dates are selected, so invalid predictions outside the overlap cannot be
+silently hidden. An empty common window is valid but produces undefined metrics.
+At each cutoff, the shared forecast generator supplies a predictor with only the
+completed rows preceding the target cycle plus the target cycle's start date;
+the row containing the eventual target is not exposed.
+
 Point-forecast metrics use the unrounded numeric prediction. Signed error is
 defined as prediction minus actual, so negative values indicate an early or
 short forecast and positive values indicate a late or long forecast. Empty
