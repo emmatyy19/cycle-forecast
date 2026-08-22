@@ -38,7 +38,7 @@ at the beginning of the current cycle. See the
 
 ### Evaluation and modeling
 
-- [ ] Implement forecasting metrics in days
+- [x] Implement forecasting metrics in days
 - [ ] Implement leakage-safe walk-forward validation
 - [ ] Define and preserve a final temporal holdout
 - [ ] Build lagged and rolling historical features

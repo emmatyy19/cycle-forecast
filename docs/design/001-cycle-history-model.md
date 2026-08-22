@@ -174,6 +174,13 @@ The primary metric is mean absolute error in days. Supporting metrics include:
 Metrics are reported for every baseline and model over identical evaluation
 windows.
 
+Point-forecast metrics use the unrounded numeric prediction. Signed error is
+defined as prediction minus actual, so negative values indicate an early or
+short forecast and positive values indicate a late or long forecast. Empty
+forecast batches are valid when history is insufficient; their aggregate
+metrics are undefined rather than zero. Forecasts must carry the same dataset
+fingerprint as their actual targets and align uniquely by cycle-start cutoff.
+
 ## Reproducibility
 
 A training run should record:
