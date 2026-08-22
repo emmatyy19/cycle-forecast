@@ -149,6 +149,15 @@ Initial candidate features include lagged completed cycle lengths and rolling or
 expanding statistics computed using historical rows only. Feature construction
 must be shared between training and prediction code.
 
+The initial fixed candidate configuration uses cycle-length lags 1, 2, and 3;
+rolling means and medians over 3, 6, and 12 completed cycles; and an expanding
+mean over all completed history. This requires 12 prior completed cycles before
+producing a complete feature vector. Every vector carries ordered feature names,
+and the identical cutoff-safe transform is used for supervised development rows
+and future predictions. Supervised feature construction accepts the temporal
+split and accesses development rows only; holdout targets cannot enter feature
+selection or training matrices.
+
 Calendar or trend features may be considered later, but only when their value and
 prediction-time availability are explicit.
 
