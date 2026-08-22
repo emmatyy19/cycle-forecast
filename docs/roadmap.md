@@ -40,7 +40,7 @@ at the beginning of the current cycle. See the
 
 - [x] Implement forecasting metrics in days
 - [x] Implement leakage-safe walk-forward validation
-- [ ] Define and preserve a final temporal holdout
+- [x] Define and preserve a final temporal holdout
 - [ ] Build lagged and rolling historical features
 - [ ] Train the first regularized regression model
 - [ ] Compare every model against the non-ML baselines

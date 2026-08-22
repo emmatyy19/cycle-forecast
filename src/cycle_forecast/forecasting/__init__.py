@@ -18,6 +18,12 @@ from cycle_forecast.forecasting.baselines import (
     generate_walk_forward_forecasts,
     round_cycle_length_days,
 )
+from cycle_forecast.forecasting.holdout import (
+    FINAL_HOLDOUT_CYCLE_COUNT,
+    FINAL_HOLDOUT_POLICY_VERSION,
+    TemporalHoldoutSplit,
+    split_final_temporal_holdout,
+)
 from cycle_forecast.forecasting.metrics import (
     ForecastError,
     ForecastEvaluation,
@@ -32,6 +38,8 @@ from cycle_forecast.forecasting.validation import (
 __all__ = [
     "EXPANDING_MEAN_BASELINE_NAME",
     "EXPANDING_MEAN_BASELINE_VERSION",
+    "FINAL_HOLDOUT_CYCLE_COUNT",
+    "FINAL_HOLDOUT_POLICY_VERSION",
     "PREVIOUS_CYCLE_BASELINE_NAME",
     "PREVIOUS_CYCLE_BASELINE_VERSION",
     "ROLLING_MEAN_BASELINE_VERSION",
@@ -41,6 +49,7 @@ __all__ = [
     "ForecastError",
     "ForecastEvaluation",
     "ForecastMetrics",
+    "TemporalHoldoutSplit",
     "WalkForwardContext",
     "WalkForwardEvaluation",
     "WalkForwardPredictor",
@@ -52,4 +61,5 @@ __all__ = [
     "forecast_with_rolling_median",
     "generate_walk_forward_forecasts",
     "round_cycle_length_days",
+    "split_final_temporal_holdout",
 ]

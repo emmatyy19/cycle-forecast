@@ -162,8 +162,12 @@ train on rows before t → evaluate row t → advance one row
 ```
 
 Before serious tuning begins, the most recent block of complete cycles will be
-reserved as an untouched final holdout. The holdout rule must be recorded before
-it is used and must not be repeatedly consulted during model selection.
+reserved as an untouched final holdout. The fixed policy reserves the 12 most
+recent completed cycles, roughly one year of outcomes, and requires at least one
+earlier development cycle. The partition records its policy version and the
+complete dataset fingerprint. Holdout size is not runtime-configurable; changing
+it requires a versioned policy change. The holdout must not be inspected during
+feature or model selection and is used once after those decisions are frozen.
 
 The primary metric is mean absolute error in days. Supporting metrics include:
 
