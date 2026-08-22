@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     name: Quality and tests
@@ -27,16 +31,73 @@ jobs:
         run: uv sync --locked --all-groups
 
       - name: Check formatting
+        id: format
         run: uv run ruff format --check .
 
       - name: Lint
+        id: lint
         run: uv run ruff check .
 
       - name: Type check
+        id: types
         run: uv run pyright
 
+      - name: Verify notebooks have no output
+        id: notebooks
+        run: uv run nbstripout --verify notebooks/*.ipynb
+
       - name: Run full test suite with coverage
-        run: uv run pytest --cov=cycle_forecast --cov-report=term-missing
+        id: tests
+        run: >
+          uv run pytest
+          --cov=cycle_forecast
+          --cov-report=term-missing
+          --cov-report=html:htmlcov
+          --cov-report=xml:coverage.xml
+          --cov-report=markdown-append:${GITHUB_STEP_SUMMARY}
+          --cov-fail-under=90
+          --junitxml=test-results.xml
 
       - name: Build package
+        id: build
         run: uv build
+
+      - name: Smoke test built wheel
+        id: smoke
+        run: |
+          uv venv --python 3.12 "${RUNNER_TEMP}/cycle-forecast-smoke"
+          uv pip install \
+            --python "${RUNNER_TEMP}/cycle-forecast-smoke/bin/python" \
+            dist/*.whl
+          "${RUNNER_TEMP}/cycle-forecast-smoke/bin/python" \
+            -c "import cycle_forecast"
+          "${RUNNER_TEMP}/cycle-forecast-smoke/bin/cycle-forecast"
+
+      - name: Upload test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-and-coverage-reports
+          path: |
+            htmlcov/
+            coverage.xml
+            test-results.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Write CI summary
+        if: always()
+        run: |
+          {
+            echo "## CI results"
+            echo
+            echo "| Check | Result |"
+            echo "| --- | --- |"
+            echo "| Ruff formatting | ${{ steps.format.outcome }} |"
+            echo "| Ruff lint | ${{ steps.lint.outcome }} |"
+            echo "| Pyright | ${{ steps.types.outcome }} |"
+            echo "| Notebook output | ${{ steps.notebooks.outcome }} |"
+            echo "| Pytest and coverage | ${{ steps.tests.outcome }} |"
+            echo "| Package build | ${{ steps.build.outcome }} |"
+            echo "| Wheel smoke test | ${{ steps.smoke.outcome }} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
