@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from math import floor, isfinite
 from statistics import mean, median
 
-from cycle_forecast.data import CycleDataset
+from cycle_forecast.data import CycleDataset, CycleDatasetRow
 
 PREVIOUS_CYCLE_BASELINE_NAME = "previous-cycle"
 """Stable name of the previous-cycle baseline."""
@@ -71,6 +71,25 @@ class ForecastBatch:
     forecasts: tuple[CycleLengthForecast, ...]
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class WalkForwardContext:
+    """Expose only information available at one prediction cutoff.
+
+    Parameters
+    ----------
+    cycle_start_date
+        Start of the cycle being predicted.
+    history
+        Completed dataset rows strictly before ``cycle_start_date``.
+    """
+
+    cycle_start_date: date
+    history: tuple[CycleDatasetRow, ...]
+
+
+type WalkForwardPredictor = Callable[[WalkForwardContext], float]
+
+
 def round_cycle_length_days(*, value: float) -> int:
     """Round a positive day estimate to the nearest whole day, half up.
 
@@ -93,6 +112,78 @@ def round_cycle_length_days(*, value: float) -> int:
         message = "predicted cycle length must be positive and finite"
         raise ValueError(message)
     return floor(value + 0.5)
+
+
+def generate_walk_forward_forecasts(
+    *,
+    dataset: CycleDataset,
+    forecaster_name: str,
+    forecaster_version: str,
+    minimum_history: int,
+    predictor: WalkForwardPredictor,
+) -> ForecastBatch:
+    """Generate chronological forecasts from cutoff-safe historical contexts.
+
+    Parameters
+    ----------
+    dataset
+        Immutable completed-cycle rows in chronological order.
+    forecaster_name
+        Stable identifier for the forecasting method and configuration.
+    forecaster_version
+        Semantic version of the forecasting behavior.
+    minimum_history
+        Positive number of completed rows required before prediction.
+    predictor
+        Function receiving only rows completed by the current cutoff.
+
+    Returns
+    -------
+    ForecastBatch
+        Forecasts beginning after ``minimum_history`` completed cycles.
+
+    Raises
+    ------
+    ValueError
+        If ``minimum_history`` is not positive or a prediction is invalid.
+
+    Notes
+    -----
+    The row containing the actual target being forecast is never included in
+    ``WalkForwardContext.history``. The predictor receives its cycle-start date
+    separately so it cannot access that row's eventual target through context.
+    """
+    if minimum_history < 1:
+        message = "minimum_history must be positive"
+        raise ValueError(message)
+
+    forecasts: list[CycleLengthForecast] = []
+    for position in range(minimum_history, len(dataset.rows)):
+        cycle_start = dataset.rows[position].cycle_start_date
+        raw_prediction = predictor(
+            WalkForwardContext(
+                cycle_start_date=cycle_start,
+                history=dataset.rows[:position],
+            )
+        )
+        operational_prediction = round_cycle_length_days(value=raw_prediction)
+        forecasts.append(
+            CycleLengthForecast(
+                cycle_start_date=cycle_start,
+                predicted_cycle_length_days=raw_prediction,
+                operational_cycle_length_days=operational_prediction,
+                predicted_next_cycle_start_date=(
+                    cycle_start + timedelta(days=operational_prediction)
+                ),
+            )
+        )
+
+    return ForecastBatch(
+        forecaster_name=forecaster_name,
+        forecaster_version=forecaster_version,
+        dataset_fingerprint=dataset.fingerprint,
+        forecasts=tuple(forecasts),
+    )
 
 
 def _last(values: tuple[int, ...]) -> float:
@@ -174,30 +265,21 @@ def _forecast_from_history(
     ForecastBatch
         Chronological forecasts and their provenance metadata.
     """
-    cycle_lengths = tuple(row.cycle_length_days for row in dataset.rows)
-    forecasts: list[CycleLengthForecast] = []
-    for position in range(minimum_history, len(dataset.rows)):
-        history_start = 0 if window_size is None else position - window_size
-        history = cycle_lengths[history_start:position]
-        raw_prediction = statistic(history)
-        operational_prediction = round_cycle_length_days(value=raw_prediction)
-        cycle_start = dataset.rows[position].cycle_start_date
-        forecasts.append(
-            CycleLengthForecast(
-                cycle_start_date=cycle_start,
-                predicted_cycle_length_days=raw_prediction,
-                operational_cycle_length_days=operational_prediction,
-                predicted_next_cycle_start_date=(
-                    cycle_start + timedelta(days=operational_prediction)
-                ),
-            )
-        )
 
-    return ForecastBatch(
+    def predict(context: WalkForwardContext) -> float:
+        """Reduce the cutoff-safe target history for one baseline forecast."""
+        history_rows = (
+            context.history if window_size is None else context.history[-window_size:]
+        )
+        history = tuple(row.cycle_length_days for row in history_rows)
+        return statistic(history)
+
+    return generate_walk_forward_forecasts(
+        dataset=dataset,
         forecaster_name=forecaster_name,
         forecaster_version=forecaster_version,
-        dataset_fingerprint=dataset.fingerprint,
-        forecasts=tuple(forecasts),
+        minimum_history=minimum_history,
+        predictor=predict,
     )
 
 
