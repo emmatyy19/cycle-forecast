@@ -22,15 +22,16 @@ def test_load_synthetic_cycle_history() -> None:
     """Load the committed synthetic example in chronological order."""
     records = load_cycle_history("data/synthetic/sample_cycle_history.csv")
 
-    assert len(records) == 12
+    assert len(records) == 121
     assert records[0] == CycleHistoryRecord(
-        cycle_start_date=date(2024, 1, 3),
+        cycle_start_date=date(2015, 1, 4),
         period_length_days=6,
     )
     assert records[-1] == CycleHistoryRecord(
-        cycle_start_date=date(2024, 11, 12),
+        cycle_start_date=date(2025, 2, 7),
         period_length_days=6,
     )
+    assert len(build_cycle_dataset(records).rows) == 120
 
 
 @pytest.mark.parametrize(
@@ -170,14 +171,14 @@ def test_build_cycle_dataset_from_consecutive_starts() -> None:
 
     assert len(dataset.rows) == len(records) - 1
     assert dataset.rows[0] == CycleDatasetRow(
-        cycle_start_date=date(2024, 1, 3),
-        next_cycle_start_date=date(2024, 1, 31),
-        cycle_length_days=28,
+        cycle_start_date=date(2015, 1, 4),
+        next_cycle_start_date=date(2015, 2, 9),
+        cycle_length_days=36,
     )
     assert dataset.rows[-1] == CycleDatasetRow(
-        cycle_start_date=date(2024, 10, 15),
-        next_cycle_start_date=date(2024, 11, 12),
-        cycle_length_days=28,
+        cycle_start_date=date(2025, 1, 12),
+        next_cycle_start_date=date(2025, 2, 7),
+        cycle_length_days=26,
     )
 
 

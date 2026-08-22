@@ -30,7 +30,7 @@ at the beginning of the current cycle. See the
 
 ### Exploration and baselines
 
-- [ ] Explore distributions, trends, variability, and autocorrelation
+- [x] Explore distributions, trends, variability, and autocorrelation
 - [ ] Implement a previous-cycle baseline
 - [ ] Implement rolling-mean baselines
 - [ ] Implement rolling-median baselines

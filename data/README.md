@@ -17,6 +17,11 @@ data/
 Do not put real health records in `synthetic/`. Synthetic files should be
 invented independently rather than created by perturbing personal records.
 
+`sample_cycle_history.csv` contains 120 completed cycles for realistic examples,
+tests, and plotting density. It is generated deterministically by
+`scripts/generate_synthetic_cycle_history.py`; its fixed seed and generic
+parameters were chosen independently rather than fitted to personal data.
+
 ## Raw cycle-history contract
 
 The local `data/raw/cycle_history.csv` file has exactly two columns:

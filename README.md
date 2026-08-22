@@ -113,3 +113,8 @@ Raw, private, interim, and processed health data must remain local. Generated
 models, experiment artifacts, credentials, and notebook outputs containing
 private data must not be committed. Safe synthetic fixtures may be committed
 under `data/synthetic/` when that directory is introduced.
+
+The committed cycle-history exploration notebook and documented results use
+only independently invented synthetic data. Private analysis runs the identical
+validation, dataset-construction, statistics, and plotting code locally, but its
+figures, statistics, fingerprints, and notebook output must remain uncommitted.
