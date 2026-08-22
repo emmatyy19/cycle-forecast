@@ -2,6 +2,7 @@
 
 from dataclasses import FrozenInstanceError
 from datetime import date
+from inspect import Parameter, signature
 from pathlib import Path
 
 import pytest
@@ -20,17 +21,38 @@ from cycle_forecast.data.cycle_history import (
 
 def test_load_synthetic_cycle_history() -> None:
     """Load the committed synthetic example in chronological order."""
-    records = load_cycle_history("data/synthetic/sample_cycle_history.csv")
+    records = load_cycle_history(path="data/synthetic/sample_cycle_history.csv")
 
-    assert len(records) == 12
+    assert len(records) == 121
     assert records[0] == CycleHistoryRecord(
-        cycle_start_date=date(2024, 1, 3),
+        cycle_start_date=date(2015, 1, 4),
         period_length_days=6,
     )
     assert records[-1] == CycleHistoryRecord(
-        cycle_start_date=date(2024, 11, 12),
+        cycle_start_date=date(2025, 2, 7),
         period_length_days=6,
     )
+    assert len(build_cycle_dataset(records=records).rows) == 120
+
+
+def test_public_data_api_requires_keyword_arguments() -> None:
+    """Keep reusable data functions and records explicit at call sites."""
+    assert signature(load_cycle_history).parameters["path"].kind is (
+        Parameter.KEYWORD_ONLY
+    )
+    assert signature(build_cycle_dataset).parameters["records"].kind is (
+        Parameter.KEYWORD_ONLY
+    )
+    assert signature(fingerprint_cycle_dataset).parameters["records"].kind is (
+        Parameter.KEYWORD_ONLY
+    )
+    assert signature(CycleHistoryRecord).parameters["cycle_start_date"].kind is (
+        Parameter.KEYWORD_ONLY
+    )
+    assert signature(CycleDatasetRow).parameters["cycle_start_date"].kind is (
+        Parameter.KEYWORD_ONLY
+    )
+    assert signature(CycleDataset).parameters["rows"].kind is Parameter.KEYWORD_ONLY
 
 
 @pytest.mark.parametrize(
@@ -113,7 +135,7 @@ def test_reject_invalid_cycle_history(
     csv_path.write_text(contents, encoding="utf-8")
 
     with pytest.raises(CycleHistoryValidationError, match=expected_message):
-        load_cycle_history(csv_path)
+        load_cycle_history(path=csv_path)
 
 
 def test_allow_configurable_minimum_gap(tmp_path: Path) -> None:
@@ -124,7 +146,7 @@ def test_allow_configurable_minimum_gap(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    assert load_cycle_history(csv_path, minimum_cycle_days=9) == (
+    assert load_cycle_history(path=csv_path, minimum_cycle_days=9) == (
         CycleHistoryRecord(
             cycle_start_date=date(2024, 1, 1),
             period_length_days=7,
@@ -139,7 +161,7 @@ def test_allow_configurable_minimum_gap(tmp_path: Path) -> None:
 def test_reject_nonpositive_minimum_gap() -> None:
     """Reject a nonsensical minimum-gap configuration."""
     with pytest.raises(ValueError, match="must be positive"):
-        load_cycle_history("unused.csv", minimum_cycle_days=0)
+        load_cycle_history(path="unused.csv", minimum_cycle_days=0)
 
 
 def test_wrap_missing_file_error(tmp_path: Path) -> None:
@@ -147,7 +169,7 @@ def test_wrap_missing_file_error(tmp_path: Path) -> None:
     missing_path = tmp_path / "missing.csv"
 
     with pytest.raises(CycleHistoryValidationError, match="Could not read"):
-        load_cycle_history(missing_path)
+        load_cycle_history(path=missing_path)
 
 
 def test_cycle_history_record_is_frozen() -> None:
@@ -164,20 +186,20 @@ def test_cycle_history_record_is_frozen() -> None:
 
 def test_build_cycle_dataset_from_consecutive_starts() -> None:
     """Create chronological targets from consecutive validated starts."""
-    records = load_cycle_history("data/synthetic/sample_cycle_history.csv")
+    records = load_cycle_history(path="data/synthetic/sample_cycle_history.csv")
 
-    dataset = build_cycle_dataset(records)
+    dataset = build_cycle_dataset(records=records)
 
     assert len(dataset.rows) == len(records) - 1
     assert dataset.rows[0] == CycleDatasetRow(
-        cycle_start_date=date(2024, 1, 3),
-        next_cycle_start_date=date(2024, 1, 31),
-        cycle_length_days=28,
+        cycle_start_date=date(2015, 1, 4),
+        next_cycle_start_date=date(2015, 2, 9),
+        cycle_length_days=36,
     )
     assert dataset.rows[-1] == CycleDatasetRow(
-        cycle_start_date=date(2024, 10, 15),
-        next_cycle_start_date=date(2024, 11, 12),
-        cycle_length_days=28,
+        cycle_start_date=date(2025, 1, 12),
+        next_cycle_start_date=date(2025, 2, 7),
+        cycle_length_days=26,
     )
 
 
@@ -191,7 +213,7 @@ def test_build_cycle_dataset_requires_a_completed_pair(record_count: int) -> Non
         ),
     )[:record_count]
 
-    assert build_cycle_dataset(records).rows == ()
+    assert build_cycle_dataset(records=records).rows == ()
 
 
 def test_cycle_dataset_row_is_frozen() -> None:
@@ -209,10 +231,10 @@ def test_cycle_dataset_row_is_frozen() -> None:
 
 def test_build_cycle_dataset_records_provenance() -> None:
     """Attach stable transformation and input identities to derived rows."""
-    records = load_cycle_history("data/synthetic/sample_cycle_history.csv")
+    records = load_cycle_history(path="data/synthetic/sample_cycle_history.csv")
 
-    first_dataset = build_cycle_dataset(records)
-    second_dataset = build_cycle_dataset(records)
+    first_dataset = build_cycle_dataset(records=records)
+    second_dataset = build_cycle_dataset(records=records)
 
     assert first_dataset == second_dataset
     assert first_dataset.transformation_version == (
@@ -225,13 +247,19 @@ def test_build_cycle_dataset_records_provenance() -> None:
 def test_cycle_dataset_fingerprint_has_stable_golden_value() -> None:
     """Detect accidental changes to the canonical fingerprint payload."""
     records = (
-        CycleHistoryRecord(date(2024, 1, 3), 6),
-        CycleHistoryRecord(date(2024, 1, 31), 7),
+        CycleHistoryRecord(
+            cycle_start_date=date(2024, 1, 3),
+            period_length_days=6,
+        ),
+        CycleHistoryRecord(
+            cycle_start_date=date(2024, 1, 31),
+            period_length_days=7,
+        ),
     )
 
     assert (
         fingerprint_cycle_dataset(
-            records,
+            records=records,
             transformation_version="cycle-dataset-v1",
         )
         == "sha256:c05fd92198797dc05521c8ac45ba3c7bbb86c8a27754cf1d01a8b43511ce7a39"
@@ -241,33 +269,45 @@ def test_cycle_dataset_fingerprint_has_stable_golden_value() -> None:
 def test_cycle_dataset_fingerprint_covers_all_validated_input_fields() -> None:
     """Change identity when either a start date or period length changes."""
     records = (
-        CycleHistoryRecord(date(2024, 1, 3), 6),
-        CycleHistoryRecord(date(2024, 1, 31), 7),
+        CycleHistoryRecord(
+            cycle_start_date=date(2024, 1, 3),
+            period_length_days=6,
+        ),
+        CycleHistoryRecord(
+            cycle_start_date=date(2024, 1, 31),
+            period_length_days=7,
+        ),
     )
     changed_date = (
         records[0],
-        CycleHistoryRecord(date(2024, 2, 1), 7),
+        CycleHistoryRecord(
+            cycle_start_date=date(2024, 2, 1),
+            period_length_days=7,
+        ),
     )
     changed_period_length = (
-        CycleHistoryRecord(date(2024, 1, 3), 5),
+        CycleHistoryRecord(
+            cycle_start_date=date(2024, 1, 3),
+            period_length_days=5,
+        ),
         records[1],
     )
 
     original = fingerprint_cycle_dataset(
-        records,
+        records=records,
         transformation_version="cycle-dataset-v1",
     )
 
     assert (
         fingerprint_cycle_dataset(
-            changed_date,
+            records=changed_date,
             transformation_version="cycle-dataset-v1",
         )
         != original
     )
     assert (
         fingerprint_cycle_dataset(
-            changed_period_length,
+            records=changed_period_length,
             transformation_version="cycle-dataset-v1",
         )
         != original
@@ -276,14 +316,19 @@ def test_cycle_dataset_fingerprint_covers_all_validated_input_fields() -> None:
 
 def test_cycle_dataset_fingerprint_covers_transformation_version() -> None:
     """Change identity when dataset semantics receive a new version."""
-    records = (CycleHistoryRecord(date(2024, 1, 3), 6),)
+    records = (
+        CycleHistoryRecord(
+            cycle_start_date=date(2024, 1, 3),
+            period_length_days=6,
+        ),
+    )
 
     version_one = fingerprint_cycle_dataset(
-        records,
+        records=records,
         transformation_version="cycle-dataset-v1",
     )
     version_two = fingerprint_cycle_dataset(
-        records,
+        records=records,
         transformation_version="cycle-dataset-v2",
     )
 
@@ -294,7 +339,7 @@ def test_cycle_dataset_fingerprint_covers_transformation_version() -> None:
 def test_reject_invalid_transformation_version(version: str) -> None:
     """Reject versions that would make canonical payload boundaries ambiguous."""
     with pytest.raises(ValueError, match="transformation_version"):
-        fingerprint_cycle_dataset((), transformation_version=version)
+        fingerprint_cycle_dataset(records=(), transformation_version=version)
 
 
 def test_cycle_dataset_is_frozen() -> None:

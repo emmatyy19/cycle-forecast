@@ -16,7 +16,7 @@ class CycleHistoryValidationError(ValueError):
     """Indicate that cycle-history data violates the raw-data contract."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class CycleHistoryRecord:
     """Represent one raw cycle-history observation.
 
@@ -32,7 +32,7 @@ class CycleHistoryRecord:
     period_length_days: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class CycleDatasetRow:
     """Represent one completed cycle and its supervised target.
 
@@ -51,7 +51,7 @@ class CycleDatasetRow:
     cycle_length_days: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class CycleDataset:
     """Contain completed-cycle rows and their reproducibility metadata.
 
@@ -71,8 +71,8 @@ class CycleDataset:
 
 
 def fingerprint_cycle_dataset(
-    records: Sequence[CycleHistoryRecord],
     *,
+    records: Sequence[CycleHistoryRecord],
     transformation_version: str,
 ) -> str:
     """Fingerprint validated inputs under a dataset transformation version.
@@ -122,6 +122,7 @@ def fingerprint_cycle_dataset(
 
 
 def build_cycle_dataset(
+    *,
     records: Sequence[CycleHistoryRecord],
 ) -> CycleDataset:
     """Construct deterministic targets from validated cycle history.
@@ -159,15 +160,15 @@ def build_cycle_dataset(
         rows=rows,
         transformation_version=CYCLE_DATASET_TRANSFORMATION_VERSION,
         fingerprint=fingerprint_cycle_dataset(
-            records,
+            records=records,
             transformation_version=CYCLE_DATASET_TRANSFORMATION_VERSION,
         ),
     )
 
 
 def load_cycle_history(
-    path: str | Path,
     *,
+    path: str | Path,
     minimum_cycle_days: int = 15,
 ) -> tuple[CycleHistoryRecord, ...]:
     """Load validated cycle-history records from a CSV file.
