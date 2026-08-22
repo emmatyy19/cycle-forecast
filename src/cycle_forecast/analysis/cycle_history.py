@@ -8,7 +8,7 @@ from statistics import mean, median, quantiles, stdev
 from cycle_forecast.data import CycleDataset
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class CycleLengthFrequency:
     """Represent the observed frequency of one cycle length.
 
@@ -24,7 +24,7 @@ class CycleLengthFrequency:
     count: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class CycleHistoryExploration:
     """Contain descriptive statistics for completed cycle lengths.
 
@@ -70,7 +70,7 @@ class CycleHistoryExploration:
     lag_one_autocorrelation: float | None
 
 
-def _linear_trend(values: Sequence[int]) -> float | None:
+def _linear_trend(*, values: Sequence[int]) -> float | None:
     """Calculate an ordinary least-squares slope over sequence position.
 
     Parameters
@@ -98,7 +98,11 @@ def _linear_trend(values: Sequence[int]) -> float | None:
     return numerator / denominator
 
 
-def _correlation(left: Sequence[int], right: Sequence[int]) -> float | None:
+def _correlation(
+    *,
+    left: Sequence[int],
+    right: Sequence[int],
+) -> float | None:
     """Calculate Pearson correlation for two equal-length sequences.
 
     Parameters
@@ -145,7 +149,7 @@ def _correlation(left: Sequence[int], right: Sequence[int]) -> float | None:
     return cross_product / (left_sum_squares * right_sum_squares) ** 0.5
 
 
-def explore_cycle_history(dataset: CycleDataset) -> CycleHistoryExploration:
+def explore_cycle_history(*, dataset: CycleDataset) -> CycleHistoryExploration:
     """Summarize distribution, variability, trend, and autocorrelation.
 
     Parameters
@@ -205,9 +209,9 @@ def explore_cycle_history(dataset: CycleDataset) -> CycleHistoryExploration:
         maximum_days=max(cycle_lengths),
         standard_deviation_days=standard_deviation,
         interquartile_range_days=interquartile_range,
-        trend_days_per_cycle=_linear_trend(cycle_lengths),
+        trend_days_per_cycle=_linear_trend(values=cycle_lengths),
         lag_one_autocorrelation=_correlation(
-            cycle_lengths[:-1],
-            cycle_lengths[1:],
+            left=cycle_lengths[:-1],
+            right=cycle_lengths[1:],
         ),
     )

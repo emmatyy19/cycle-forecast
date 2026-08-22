@@ -15,7 +15,7 @@ from cycle_forecast.data import CycleDataset
 
 
 def _date_tick_positions(
-    cycle_count: int, *, maximum_ticks: int = 8
+    *, cycle_count: int, maximum_ticks: int = 8
 ) -> tuple[int, ...]:
     """Select evenly spaced chronological labels without crowding the axis.
 
@@ -54,9 +54,9 @@ def _date_tick_positions(
 
 
 def plot_cycle_history(
+    *,
     dataset: CycleDataset,
     exploration: CycleHistoryExploration | None = None,
-    *,
     moving_average_window: int | None = 6,
 ) -> Figure:
     """Plot distribution, chronological history, and lag-1 relationships.
@@ -93,7 +93,7 @@ def plot_cycle_history(
         message = "moving_average_window must be positive or None"
         raise ValueError(message)
 
-    summary = exploration or explore_cycle_history(dataset)
+    summary = exploration or explore_cycle_history(dataset=dataset)
     if summary.dataset_fingerprint != dataset.fingerprint:
         message = "exploration fingerprint does not match the dataset"
         raise ValueError(message)
@@ -159,7 +159,7 @@ def plot_cycle_history(
     )
     if lengths:
         history_axis.legend()
-        tick_positions = _date_tick_positions(len(dates))
+        tick_positions = _date_tick_positions(cycle_count=len(dates))
         history_axis.set_xticks(
             tick_positions,
             [dates[position].isoformat() for position in tick_positions],

@@ -43,10 +43,10 @@ used by tests and future pipeline code:
 from cycle_forecast.analysis import explore_cycle_history, plot_cycle_history
 from cycle_forecast.data import build_cycle_dataset, load_cycle_history
 
-records = load_cycle_history("data/raw/cycle_history.csv")
-dataset = build_cycle_dataset(records)
-exploration = explore_cycle_history(dataset)
-figure = plot_cycle_history(dataset, exploration)
+records = load_cycle_history(path="data/raw/cycle_history.csv")
+dataset = build_cycle_dataset(records=records)
+exploration = explore_cycle_history(dataset=dataset)
+figure = plot_cycle_history(dataset=dataset, exploration=exploration)
 ```
 
 The returned exploration carries `dataset.fingerprint`, allowing locally saved

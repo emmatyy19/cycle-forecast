@@ -56,6 +56,9 @@ These instructions apply to the entire repository.
   Python 3.12 provides a native equivalent.
 - Fully annotate every function and method, including parameters and return
   types. Do not introduce untyped functions to silence the type checker.
+- Prefer keyword arguments at call sites whenever the called API supports them.
+  Define parameters on reusable project functions as keyword-only unless a
+  positional argument has a clear semantic or protocol-driven advantage.
 - Write a NumPy-style docstring for every function, method, class, and module.
   Include `Parameters`, `Returns`, `Raises`, and `Notes` sections when they are
   applicable; omit empty sections.
