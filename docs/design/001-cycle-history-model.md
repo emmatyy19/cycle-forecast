@@ -130,7 +130,15 @@ The initial evaluation compares at least:
 - previous completed cycle length
 - rolling mean over recent completed cycles
 - rolling median over recent completed cycles
-- expanding statistic over all prior completed cycles
+- expanding mean over all prior completed cycles
+
+Every baseline uses targets that were complete before the prediction cutoff.
+Fixed-window baselines emit no forecast until the full configured window is
+available; the previous-cycle and expanding-mean baselines require one prior
+completed cycle. Raw numeric predictions are retained for metric calculation.
+For the operational next-start date, positive fractional predictions are
+rounded to the nearest whole day with halves rounded up. The configured rolling
+window is part of the forecaster name recorded with each forecast batch.
 
 An ML model is adopted only when it improves meaningfully over the strongest
 simple baseline under the same temporal evaluation.
