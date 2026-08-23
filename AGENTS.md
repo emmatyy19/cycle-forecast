@@ -67,6 +67,11 @@ These instructions apply to the entire repository.
   narrow as possible and explain why.
 - Use Ruff for formatting, import sorting, linting, and docstring enforcement.
   Do not manually format code contrary to the Ruff configuration.
+- Avoid magic strings for identifiers, field names, states, and other closed
+  values used in comparisons or control flow. Prefer a typed `StrEnum` with
+  `auto()` for a related closed set, or a named constant for an isolated stable
+  value. Human-readable messages and test fixtures need not be enumerated when
+  they are not acting as program identifiers.
 - Share feature transformations between training and inference code. Never
   duplicate feature logic in notebooks or serving code.
 

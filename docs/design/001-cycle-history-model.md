@@ -149,6 +149,15 @@ Initial candidate features include lagged completed cycle lengths and rolling or
 expanding statistics computed using historical rows only. Feature construction
 must be shared between training and prediction code.
 
+The initial fixed candidate configuration uses cycle-length lags 1, 2, and 3;
+rolling means and medians over 3, 6, and 12 completed cycles; and an expanding
+mean over all completed history. This requires 12 prior completed cycles before
+producing a complete feature vector. Every vector carries ordered feature names,
+and the identical cutoff-safe transform is used for supervised development rows
+and future predictions. Supervised feature construction accepts the temporal
+split and accesses development rows only; holdout targets cannot enter feature
+selection or training matrices.
+
 Calendar or trend features may be considered later, but only when their value and
 prediction-time availability are explicit.
 
@@ -162,8 +171,12 @@ train on rows before t → evaluate row t → advance one row
 ```
 
 Before serious tuning begins, the most recent block of complete cycles will be
-reserved as an untouched final holdout. The holdout rule must be recorded before
-it is used and must not be repeatedly consulted during model selection.
+reserved as an untouched final holdout. The fixed policy reserves the 12 most
+recent completed cycles, roughly one year of outcomes, and requires at least one
+earlier development cycle. The partition records its policy version and the
+complete dataset fingerprint. Holdout size is not runtime-configurable; changing
+it requires a versioned policy change. The holdout must not be inspected during
+feature or model selection and is used once after those decisions are frozen.
 
 The primary metric is mean absolute error in days. Supporting metrics include:
 
