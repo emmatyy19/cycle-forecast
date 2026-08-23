@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date
+from enum import StrEnum, auto
 from statistics import mean, median
 
 from cycle_forecast.forecasting.baselines import WalkForwardContext
@@ -9,6 +10,13 @@ from cycle_forecast.forecasting.holdout import TemporalHoldoutSplit
 
 CYCLE_HISTORY_FEATURE_VERSION = "cycle-history-features-v1"
 """Semantic version of the historical feature definitions and ordering."""
+
+
+class _FeatureConfigField(StrEnum):
+    """Identify validated feature-configuration fields without magic strings."""
+
+    LAGS = auto()
+    ROLLING_WINDOWS = auto()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -39,8 +47,11 @@ class CycleHistoryFeatureConfig:
         ):
             message = "feature configuration must select at least one feature"
             raise ValueError(message)
-        _validate_positions(values=self.lags, name="lags")
-        _validate_positions(values=self.rolling_windows, name="rolling_windows")
+        _validate_positions(values=self.lags, field=_FeatureConfigField.LAGS)
+        _validate_positions(
+            values=self.rolling_windows,
+            field=_FeatureConfigField.ROLLING_WINDOWS,
+        )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -111,15 +122,15 @@ class HistoryFeatureDataset:
     rows: tuple[HistoryFeatureRow, ...]
 
 
-def _validate_positions(*, values: tuple[int, ...], name: str) -> None:
+def _validate_positions(*, values: tuple[int, ...], field: _FeatureConfigField) -> None:
     """Validate positive, unique, strictly increasing feature positions.
 
     Parameters
     ----------
     values
         Lag positions or rolling windows.
-    name
-        Configuration field name used in an error message.
+    field
+        Closed configuration-field identifier used in an error message.
 
     Raises
     ------
@@ -127,7 +138,9 @@ def _validate_positions(*, values: tuple[int, ...], name: str) -> None:
         If a value is nonpositive, duplicated, or not increasing.
     """
     if any(value < 1 for value in values) or tuple(sorted(set(values))) != values:
-        message = f"{name} must contain unique positive values in increasing order"
+        message = (
+            f"{field.value} must contain unique positive values in increasing order"
+        )
         raise ValueError(message)
 
 
