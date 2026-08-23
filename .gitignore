@@ -43,7 +43,7 @@ data/interim/
 data/processed/
 
 # Local model / experiment artifacts
-models/
+/models/
 artifacts/
 mlruns/
 mlartifacts/

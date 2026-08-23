@@ -161,6 +161,27 @@ selection or training matrices.
 Calendar or trend features may be considered later, but only when their value and
 prediction-time availability are explicit.
 
+## First regularized model
+
+The first learned model is a scikit-learn pipeline containing a
+``StandardScaler`` followed by Ridge regression. The initial fixed configuration
+uses an L2 regularization strength of 1.0 and requires 12 earlier supervised
+feature rows before emitting a forecast. This is an initial model contract, not
+a claim that those settings are optimal.
+
+Walk-forward fitting creates a fresh pipeline at every development cutoff. Both
+the scaler and Ridge estimator fit only earlier development rows, then predict
+the current row from its already constructed cutoff-safe features. The current
+target joins training data only at later cutoffs. This prevents the scaler's
+means and variances, as well as the regression coefficients, from learning from
+future rows.
+
+The model result records its dataset fingerprint, holdout policy, feature
+version and configuration, model version, regularization strength, and minimum
+training history. It emits the same ``ForecastBatch`` contract as the baselines,
+so the next milestone can compare them over identical dates. This stage neither
+selects regularization from results nor evaluates the final holdout.
+
 ## Evaluation
 
 Random train/test splits are prohibited. Model selection uses walk-forward

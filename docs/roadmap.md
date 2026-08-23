@@ -42,7 +42,7 @@ at the beginning of the current cycle. See the
 - [x] Implement leakage-safe walk-forward validation
 - [x] Define and preserve a final temporal holdout
 - [x] Build lagged and rolling historical features
-- [ ] Train the first regularized regression model
+- [x] Train the first regularized regression model
 - [ ] Compare every model against the non-ML baselines
 - [ ] Quantify prediction uncertainty
 - [ ] Evaluate prediction-window width and empirical coverage together
