@@ -240,6 +240,28 @@ forecast batches are valid when history is insufficient; their aggregate
 metrics are undefined rather than zero. Forecasts must carry the same dataset
 fingerprint as their actual targets and align uniquely by cycle-start cutoff.
 
+### Prediction intervals
+
+Development uncertainty uses expanding, sequential conformal-style intervals
+centered on each raw point forecast. Before a cutoff receives an interval, the
+method collects absolute errors from strictly earlier development forecasts.
+After a fixed 12-error calibration warmup, it selects the finite-sample-corrected
+absolute-residual quantile for target coverage levels 50%, 80%, and 90%. The
+current actual is observed only after the bounds have been fixed. Bounds are
+restricted to positive cycle lengths.
+
+Interval reporting always places empirical coverage beside mean and median
+width. Coverage measures the fraction of completed cycles inside the reported
+range; width measures how broad that range had to be. A wider range is not
+automatically better merely because it covers more outcomes. The selected Ridge
+and strongest baseline use identical post-warmup development dates, and final
+holdout rows remain inaccessible.
+
+These intervals quantify historical forecast uncertainty, not a medical or
+distribution-free guarantee for a changing biological time series. Sequential
+empirical coverage is reported because the exchangeability assumptions behind
+formal conformal guarantees may not hold when cycle behavior changes over time.
+
 ## Reproducibility
 
 A training run should record:
