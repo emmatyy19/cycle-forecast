@@ -24,9 +24,3 @@ repos:
         entry: uv run pytest --testmon -q
         language: system
         pass_filenames: false
-
-      - id: strip-notebook-output
-        name: Strip notebook output
-        entry: uv run nbstripout
-        language: system
-        files: '\.ipynb$'
