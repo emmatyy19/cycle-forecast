@@ -164,10 +164,10 @@ prediction-time availability are explicit.
 ## First regularized model
 
 The first learned model is a scikit-learn pipeline containing a
-``StandardScaler`` followed by Ridge regression. The initial fixed configuration
-uses an L2 regularization strength of 1.0 and requires 12 earlier supervised
-feature rows before emitting a forecast. This is an initial model contract, not
-a claim that those settings are optimal.
+``StandardScaler`` followed by Ridge regression. Each candidate requires 12
+earlier supervised feature rows before emitting a forecast. Model development
+compares the predeclared L2 regularization strengths 0.01, 0.1, 1, 10, and 100;
+the candidate set is fixed before results are calculated.
 
 Walk-forward fitting creates a fresh pipeline at every development cutoff. Both
 the scaler and Ridge estimator fit only earlier development rows, then predict
@@ -179,8 +179,7 @@ future rows.
 The model result records its dataset fingerprint, holdout policy, feature
 version and configuration, model version, regularization strength, and minimum
 training history. It emits the same ``ForecastBatch`` contract as the baselines,
-so the next milestone can compare them over identical dates. This stage neither
-selects regularization from results nor evaluates the final holdout.
+so they can be compared over identical dates.
 
 ## Evaluation
 
@@ -208,12 +207,28 @@ The primary metric is mean absolute error in days. Supporting metrics include:
 Metrics are reported for every baseline and model over identical evaluation
 windows.
 
+Development comparison includes previous-cycle and expanding-mean baselines,
+plus rolling means and medians over 3, 6, and 12 cycles. It evaluates those
+eight baselines and all five Ridge strengths over the chronological intersection
+of their development forecasts. The Ridge candidate with the lowest development
+MAE is selected; an exact tie prefers the larger alpha and therefore stronger
+regularization. The strongest baseline is also identified by development MAE.
+Neither ranking consults the final holdout.
+
+Reporting is presentation-only: one function returns a Markdown summary and a
+second returns a three-panel Matplotlib figure showing MAE rankings, the share
+within ±2 days, and absolute error over time for the selected Ridge and strongest
+baseline. These functions do not write files. The caller chooses whether to
+display them or save them under a private, git-ignored path.
+
 Walk-forward comparisons use the chronological intersection of prediction
 cutoffs emitted by every forecaster being compared. This common window prevents
 a method with a longer minimum-history requirement from being measured over a
 different set of cycles. Forecast batches are fully validated before their
 common dates are selected, so invalid predictions outside the overlap cannot be
-silently hidden. An empty common window is valid but produces undefined metrics.
+silently hidden. An empty common window is valid at the general evaluation layer
+and produces undefined metrics. Model selection rejects it because candidates
+cannot be ranked without observations.
 At each cutoff, the shared forecast generator supplies a predictor with only the
 completed rows preceding the target cycle plus the target cycle's start date;
 the row containing the eventual target is not exposed.
