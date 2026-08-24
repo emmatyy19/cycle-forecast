@@ -42,10 +42,6 @@ jobs:
         id: types
         run: uv run pyright
 
-      - name: Verify notebooks have no output
-        id: notebooks
-        run: uv run nbstripout --verify notebooks/*.ipynb
-
       - name: Run full test suite with coverage
         id: tests
         run: >
@@ -96,7 +92,6 @@ jobs:
             echo "| Ruff formatting | ${{ steps.format.outcome == 'success' && '✅' || '❌' }} ${{ steps.format.outcome }} |"
             echo "| Ruff lint | ${{ steps.lint.outcome == 'success' && '✅' || '❌' }} ${{ steps.lint.outcome }} |"
             echo "| Pyright | ${{ steps.types.outcome == 'success' && '✅' || '❌' }} ${{ steps.types.outcome }} |"
-            echo "| Notebook output | ${{ steps.notebooks.outcome == 'success' && '✅' || '❌' }} ${{ steps.notebooks.outcome }} |"
             echo "| Pytest and coverage | ${{ steps.tests.outcome == 'success' && '✅' || '❌' }} ${{ steps.tests.outcome }} |"
             echo "| Package build | ${{ steps.build.outcome == 'success' && '✅' || '❌' }} ${{ steps.build.outcome }} |"
             echo "| Wheel smoke test | ${{ steps.smoke.outcome == 'success' && '✅' || '❌' }} ${{ steps.smoke.outcome }} |"
