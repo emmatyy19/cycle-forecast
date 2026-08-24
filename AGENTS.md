@@ -12,6 +12,10 @@ These instructions apply to the entire repository.
   notebooks exploratory; do not make production code depend on notebooks.
 - Never commit personal health data, credentials, trained models, experiment
   artifacts, or identifying notebook output.
+- Committed notebook output is allowed only when it was generated exclusively
+  from the repository's invented synthetic fixtures. Before committing an
+  executed notebook, verify its configured input and outputs contain no private
+  data, identifying paths, or private-data fingerprints.
 
 ## Git and pull-request workflow
 

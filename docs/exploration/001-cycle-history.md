@@ -57,9 +57,9 @@ The reusable demonstration notebook is
 `notebooks/cycle_history_exploration.ipynb`. It defaults to the independently
 invented 120-cycle `sample_cycle_history.csv` demonstration; set the
 `CYCLE_FORECAST_DATA_PATH` environment variable to use a private local CSV
-without editing notebook source. Repository hooks strip all notebook output
-before commit, so rerunning it privately cannot place rendered personal results
-in Git.
+without editing notebook source. Committed notebook output must be generated
+exclusively from the repository's invented synthetic fixture. Clear all output
+after any private run before staging the notebook.
 
 ## Synthetic demonstration
 
