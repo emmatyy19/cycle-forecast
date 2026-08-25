@@ -62,7 +62,8 @@ uv run pre-commit install
 VS Code workspace settings select `.venv/bin/python`, enable pytest discovery,
 use Pylance diagnostics, and format Python with Ruff on save. Install the
 Microsoft Python and Pylance extensions and the Astral Ruff extension when VS
-Code prompts for them.
+Code prompts for them. Explicit saves also run Ruff's import organizer, using
+the same isort-compatible `I` rules enforced by pre-commit and CI.
 
 ## Quality checks
 

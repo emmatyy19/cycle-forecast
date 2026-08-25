@@ -1,0 +1,11 @@
+schema_version = "phase-a-training-config-v1"
+
+[features]
+lags = [1, 2, 3]
+rolling_windows = [3, 6, 12]
+include_expanding_mean = true
+
+[comparison]
+ridge_alphas = [0.01, 0.1, 1.0, 10.0, 100.0]
+rolling_windows = [3, 6, 12]
+minimum_ridge_training_rows = 12

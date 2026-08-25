@@ -181,6 +181,26 @@ version and configuration, model version, regularization strength, and minimum
 training history. It emits the same ``ForecastBatch`` contract as the baselines,
 so they can be compared over identical dates.
 
+## Reproducible training and model package
+
+The complete Phase A feature and candidate-selection configuration lives in
+`configs/phase_a.toml` under an explicit schema version. Training code rejects
+unknown schema versions instead of silently applying current defaults.
+
+Each selection run can be written as deterministic JSON containing its UTC
+timestamp, caller-supplied code version, dataset fingerprint, holdout and
+feature versions, exact configuration, every candidate's development metrics,
+and selected Ridge strength. Run manifests and fitted models belong under the
+git-ignored `artifacts/` directory because their dataset fingerprints and
+parameters may identify private personal data.
+
+The selected model package is versioned JSON rather than a Python pickle. It
+contains the fitted scaler statistics and Ridge parameters together with model,
+feature, holdout, code, and dataset provenance. Prediction reconstructs inputs
+through the same `build_history_feature_vector` function used for training and
+rejects a feature-name mismatch. The package does not contain raw observations
+or supervised training rows.
+
 ## Evaluation
 
 Random train/test splits are prohibited. Model selection uses walk-forward

@@ -49,9 +49,9 @@ at the beginning of the current cycle. See the
 
 ### Reproducibility and delivery
 
-- [ ] Store training configuration in versioned TOML files
-- [ ] Record code version, data fingerprint, configuration, and metrics per run
-- [ ] Package the selected model and shared transformations
+- [x] Store training configuration in versioned TOML files
+- [x] Record code version, data fingerprint, configuration, and metrics per run
+- [x] Package the selected model and shared transformations
 - [ ] Expose a local prediction interface
 
 ## Phase B: Wearable-informed forecasting
