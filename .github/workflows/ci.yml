@@ -34,6 +34,10 @@ jobs:
         id: format
         run: uv run ruff format --check .
 
+      - name: Check import sorting
+        id: imports
+        run: uv run ruff check --select I .
+
       - name: Lint
         id: lint
         run: uv run ruff check .
@@ -90,6 +94,7 @@ jobs:
             echo "| Check | Result |"
             echo "| --- | --- |"
             echo "| Ruff formatting | ${{ steps.format.outcome == 'success' && '✅' || '❌' }} ${{ steps.format.outcome }} |"
+            echo "| Ruff import sorting | ${{ steps.imports.outcome == 'success' && '✅' || '❌' }} ${{ steps.imports.outcome }} |"
             echo "| Ruff lint | ${{ steps.lint.outcome == 'success' && '✅' || '❌' }} ${{ steps.lint.outcome }} |"
             echo "| Pyright | ${{ steps.types.outcome == 'success' && '✅' || '❌' }} ${{ steps.types.outcome }} |"
             echo "| Pytest and coverage | ${{ steps.tests.outcome == 'success' && '✅' || '❌' }} ${{ steps.tests.outcome }} |"
