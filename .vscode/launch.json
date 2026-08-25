@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Cycle Forecast: Interactive",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cycle_forecast.cli",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Cycle Forecast: Train",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cycle_forecast.cli",
+      "args": ["train"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}
