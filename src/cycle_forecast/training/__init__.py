@@ -14,10 +14,19 @@ from cycle_forecast.training.delivery import (
     save_model_package,
     save_training_run,
 )
+from cycle_forecast.training.workflow import (
+    DEFAULT_MODEL_FILENAME,
+    DEFAULT_RUN_FILENAME,
+    LocalTrainingResult,
+    train_from_local_history,
+)
 
 __all__ = [
+    "DEFAULT_MODEL_FILENAME",
+    "DEFAULT_RUN_FILENAME",
     "MODEL_PACKAGE_SCHEMA_VERSION",
     "TRAINING_CONFIG_SCHEMA_VERSION",
+    "LocalTrainingResult",
     "ModelPackage",
     "TrainingConfig",
     "TrainingRun",
@@ -28,4 +37,5 @@ __all__ = [
     "record_training_run",
     "save_model_package",
     "save_training_run",
+    "train_from_local_history",
 ]

@@ -71,7 +71,7 @@ jobs:
             dist/*.whl
           "${RUNNER_TEMP}/cycle-forecast-smoke/bin/python" \
             -c "import cycle_forecast"
-          "${RUNNER_TEMP}/cycle-forecast-smoke/bin/cycle-forecast"
+          "${RUNNER_TEMP}/cycle-forecast-smoke/bin/cycle-forecast" --help
 
       - name: Upload test and coverage reports
         if: always()

@@ -201,6 +201,21 @@ through the same `build_history_feature_vector` function used for training and
 rejects a feature-name mismatch. The package does not contain raw observations
 or supervised training rows.
 
+The local interface exposes training and prediction through the installed
+`cycle-forecast` command without starting a server or sending data over a
+network. With no arguments it offers a numbered action menu, discovers valid
+packages under `artifacts/` or `models/`, and discovers CSV history files under
+`data/raw/` or `data/private/`. Guided training runs the same versioned
+development comparison, keeps the final holdout reserved, and writes the model
+package and run manifest under `artifacts/`; replacing either requires explicit
+confirmation. It can pass the new package directly into prediction.
+
+The `train` and `predict` subcommands accept explicit paths for repeatable use,
+and prediction can emit JSON for local scripts. The newest validated history
+record is the current prediction cutoff; only cycle lengths completed before
+that start enter the shared feature transformation. Human-readable prediction
+output always includes the non-medical-use warning.
+
 ## Evaluation
 
 Random train/test splits are prohibited. Model selection uses walk-forward

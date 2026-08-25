@@ -93,6 +93,43 @@ GitHub Actions runs the full suite with branch coverage on every pull request
 and every push to `main`. It also verifies formatting, linting, strict types,
 the lockfile, and package builds in a clean Linux environment.
 
+## Local prediction
+
+Keep private cycle history under `data/raw/` or `data/private/`. Run the command
+with no arguments for a guided menu that can train a model or make a prediction
+through numbered choices:
+
+```bash
+uv run cycle-forecast
+```
+
+In VS Code, the same menu is available under **Run and Debug** as
+**Cycle Forecast: Interactive**. It uses the integrated terminal so file
+selection and confirmation prompts work normally. **Cycle Forecast: Train** is
+also available as a direct training shortcut.
+
+The training option uses `configs/phase_a.toml`, keeps the final temporal
+holdout reserved, and writes `artifacts/selected-model.json` plus
+`artifacts/training-run.json`. It refuses to replace them without confirmation.
+The equivalent repeatable command is:
+
+```bash
+uv run cycle-forecast train --history data/raw/cycle_history.csv
+```
+
+Use `--replace` when intentionally updating existing artifacts. To predict with
+explicit paths:
+
+```bash
+uv run cycle-forecast predict \
+  --model artifacts/selected-model.json \
+  --history data/raw/cycle_history.csv
+```
+
+Add `--json` to that direct command for machine-readable output. Prediction is
+fully local: the newest CSV record is treated as the current period start, and
+the command neither uploads data nor writes a forecast file.
+
 ## Test layout
 
 Tests live under `tests/` and mirror the package structure under
