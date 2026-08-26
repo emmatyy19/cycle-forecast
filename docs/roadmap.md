@@ -63,7 +63,8 @@ of a period starting within a future window.
   [Phase B prediction contract](design/002-daily-wearable-prediction.md)
 - [x] Define a privacy-safe wearable-data contract in the
   [Oura data contract](design/003-oura-data-contract.md)
-- [ ] Align cycle history and daily wearable observations without leakage
+- [x] Align cycle history and daily wearable observations without leakage using
+  the [Phase B alignment contract](design/004-wearable-alignment.md)
 - [ ] Establish wearable-informed baselines
 - [ ] Evaluate time-to-event and survival-analysis formulations
 - [ ] Produce calibrated daily probability distributions
