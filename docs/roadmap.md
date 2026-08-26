@@ -63,7 +63,26 @@ of a period starting within a future window.
   [Phase B prediction contract](design/002-daily-wearable-prediction.md)
 - [x] Define a privacy-safe wearable-data contract in the
   [Oura data contract](design/003-oura-data-contract.md)
-- [ ] Align cycle history and daily wearable observations without leakage
+
+### Oura ingestion and alignment
+
+- [x] Model selected Oura API V2 responses with strict Pydantic boundary models
+- [ ] Implement local OAuth authorization and token refresh without exposing
+  credentials
+- [ ] Implement an Oura API client with bounded queries, pagination, error
+  handling, and response validation
+- [ ] Store immutable private snapshots with retrieval provenance, schema
+  version, and deterministic fingerprints
+- [ ] Import historical Oura data through the same validated snapshot pipeline
+- [ ] Expose a local sync command for morning incremental retrieval
+- [ ] Validate retrieval against a real Oura account without logging, committing,
+  or uploading personal payloads
+- [x] Align validated in-memory cycle history and daily Oura observations without
+  leakage using
+  the [Phase B alignment contract](design/004-wearable-alignment.md)
+
+### Baselines and modeling
+
 - [ ] Establish wearable-informed baselines
 - [ ] Evaluate time-to-event and survival-analysis formulations
 - [ ] Produce calibrated daily probability distributions

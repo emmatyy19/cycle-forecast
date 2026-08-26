@@ -29,6 +29,11 @@ These instructions apply to the entire repository.
   direction.
 - Keep commits focused and use descriptive conventional-commit messages. Stage
   only files that belong to the current change.
+- After implementing and verifying a change, stop before staging or committing
+  and present the working-tree diff for user review.
+- Only after the user approves the diff, perform the commit, push, and pull
+  request creation together as one authorized handoff sequence. Do not create a
+  local commit early and wait for separate push or pull-request authorization.
 - Push the branch and open a pull request instead of pushing changes directly to
   `main`. The pull request should summarize the change, its motivation, and
   the verification performed.
