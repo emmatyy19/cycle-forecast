@@ -61,7 +61,8 @@ of a period starting within a future window.
 
 - [x] Define the daily prediction target and observation cutoff in the
   [Phase B prediction contract](design/002-daily-wearable-prediction.md)
-- [ ] Define a privacy-safe wearable-data contract
+- [x] Define a privacy-safe wearable-data contract in the
+  [Oura data contract](design/003-oura-data-contract.md)
 - [ ] Align cycle history and daily wearable observations without leakage
 - [ ] Establish wearable-informed baselines
 - [ ] Evaluate time-to-event and survival-analysis formulations
