@@ -67,16 +67,22 @@ of a period starting within a future window.
 ### Oura ingestion and alignment
 
 - [x] Model selected Oura API V2 responses with strict Pydantic boundary models
-- [ ] Implement local OAuth authorization and token refresh without exposing
+- [x] Implement local OAuth authorization and token refresh without exposing
   credentials
-- [ ] Implement an Oura API client with bounded queries, pagination, error
+- [x] Implement an Oura API client with bounded queries, pagination, error
   handling, and response validation
-- [ ] Store immutable private snapshots with retrieval provenance, schema
+- [x] Store immutable private snapshots with retrieval provenance, schema
   version, and deterministic fingerprints
-- [ ] Import historical Oura data through the same validated snapshot pipeline
-- [ ] Expose a local sync command for morning incremental retrieval
-- [ ] Validate retrieval against a real Oura account without logging, committing,
+- [x] Import historical Oura data through the same validated snapshot pipeline
+- [x] Expose a local sync command for morning incremental retrieval; see the
+  [local Oura setup guide](oura-local-sync.md)
+- [x] Guide Keychain-backed Oura setup and report non-sensitive local status
+- [x] Validate retrieval against a real Oura account without logging, committing,
   or uploading personal payloads
+- [ ] Normalize overlapping snapshots by route and document ID with explicit
+  version selection: use the latest version available at an operational or
+  simulated prediction cutoff, preserve corrections for leakage-safe
+  backtesting, and prevent repeated historical pulls from double-counting
 - [x] Align validated in-memory cycle history and daily Oura observations without
   leakage using
   the [Phase B alignment contract](design/004-wearable-alignment.md)
