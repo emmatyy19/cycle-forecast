@@ -59,7 +59,8 @@ at the beginning of the current cycle. See the
 Update predictions from daily wearable observations and estimate the probability
 of a period starting within a future window.
 
-- [ ] Define the daily prediction target and observation cutoff
+- [x] Define the daily prediction target and observation cutoff in the
+  [Phase B prediction contract](design/002-daily-wearable-prediction.md)
 - [ ] Define a privacy-safe wearable-data contract
 - [ ] Align cycle history and daily wearable observations without leakage
 - [ ] Establish wearable-informed baselines
