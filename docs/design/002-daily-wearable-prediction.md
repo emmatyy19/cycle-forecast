@@ -18,10 +18,12 @@ decision-making.
 
 ## Daily prediction contract
 
-One prediction is made each local calendar morning. For prediction date `D`, the
-observation cutoff is the start of local day `D`: wearable observations dated no
-later than `D - 1` may be used, while observations from `D` or later may not be
-used. Cycle-history information recorded before the cutoff may also be used.
+One prediction is made each local calendar morning after the user opens the Oura
+app and completes a Ring sync. For prediction date `D`, the observation cutoff
+is the recorded instant when that morning's data retrieval begins. The completed
+main sleep ending before that instant may be used, including observations from
+the morning of `D`. Observations collected after the cutoff may not be used.
+Cycle-history information recorded before the cutoff may also be used.
 
 The event is the locally recorded calendar date of the first bleeding day, using
 the same period-start definition as Phase A. The model produces a discrete
@@ -44,8 +46,11 @@ are not independently predicted.
 
 ## Cutoff and leakage rules
 
-- A wearable value belongs to the local calendar date assigned by the eventual
-  wearable-data contract. No part of day `D` may enter the prediction for `D`.
+- Every prediction records its timezone-aware cutoff instant. A wearable value
+  may enter the prediction only when its measurement interval ends no later than
+  that cutoff and the record was available from Oura when retrieval began.
+- Oura's completed main sleep may enter the morning prediction even when Oura
+  assigns it to day `D` or part of its measurement interval falls on `D`.
 - Late-arriving or retrospectively corrected observations may be used only if a
   reproducible snapshot or availability record proves they were present at the
   historical cutoff. Otherwise evaluation must treat them as unavailable.
@@ -81,7 +86,7 @@ The following belong to subsequent Phase B roadmap items:
 - rules for assigning overnight measurements to local calendar dates
 - alignment, missingness, and correction handling supported by available data
 - baseline definitions, statistical formulation, calibration, and scoring rules
-- the exact clock time and operational scheduling mechanism for the morning run
+- the operational scheduling mechanism for the morning run
 
 Changing the event definition, cutoff, horizon, or inclusive-window semantics
 requires a new version of this contract and explicit comparability handling.
