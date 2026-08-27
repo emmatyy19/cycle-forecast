@@ -8,12 +8,40 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import Annotated, Self
 
-from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 OURA_OPENAPI_SPECIFICATION_VERSION = "1.35"
 """Version of the Oura OpenAPI document represented by these models."""
 
 NonEmptyString = Annotated[str, StringConstraints(min_length=1)]
+
+
+def _validate_iso_date(value: str) -> str:
+    """Require a canonical ISO calendar date while preserving wire text."""
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as error:
+        raise ValueError("must be an ISO 8601 date") from error
+    if parsed.isoformat() != value:
+        raise ValueError("must be a canonical ISO 8601 date")
+    return value
+
+
+def _validate_offset_datetime(value: str) -> str:
+    """Require an ISO datetime with an explicit UTC offset."""
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as error:
+        raise ValueError("must be an ISO 8601 datetime") from error
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("must include a UTC offset")
+    return value
 
 
 class OuraBoundaryModel(BaseModel):
@@ -64,6 +92,8 @@ class OuraSample(OuraBoundaryModel):
     items: list[float | None]
     timestamp: str
 
+    validate_timestamp = field_validator("timestamp")(_validate_offset_datetime)
+
 
 class OuraSleepAlgorithmVersion(StrEnum):
     """Enumerate documented Oura sleep-algorithm versions."""
@@ -105,6 +135,9 @@ class OuraDailyReadiness(OuraBoundaryModel):
     temperature_trend_deviation: float | None = None
     timestamp: str
 
+    validate_day = field_validator("day")(_validate_iso_date)
+    validate_timestamp = field_validator("timestamp")(_validate_offset_datetime)
+
 
 class OuraDailySleep(OuraBoundaryModel):
     """Represent an Oura ``daily_sleep`` document.
@@ -117,6 +150,9 @@ class OuraDailySleep(OuraBoundaryModel):
     day: str
     score: int | None = None
     timestamp: str
+
+    validate_day = field_validator("day")(_validate_iso_date)
+    validate_timestamp = field_validator("timestamp")(_validate_offset_datetime)
 
 
 class OuraSleep(OuraBoundaryModel):
@@ -157,6 +193,11 @@ class OuraSleep(OuraBoundaryModel):
     type: OuraSleepType | None = None
     ring_id: str | None = None
     app_sleep_phase_5_min: str | None = None
+
+    validate_day = field_validator("day")(_validate_iso_date)
+    validate_datetimes = field_validator("bedtime_start", "bedtime_end")(
+        _validate_offset_datetime
+    )
 
 
 class OuraDailyReadinessResponse(OuraBoundaryModel):

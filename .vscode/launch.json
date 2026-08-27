@@ -17,6 +17,46 @@
       "args": ["train"],
       "console": "integratedTerminal",
       "justMyCode": true
+    },
+    {
+      "name": "Oura: Setup",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cycle_forecast.cli",
+      "args": ["oura-setup", "--timezone", "${input:ouraTimezone}"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Oura: Status",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cycle_forecast.cli",
+      "args": ["oura-status"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Oura: Sync Check",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cycle_forecast.cli",
+      "args": [
+        "oura-sync",
+        "--timezone",
+        "${input:ouraTimezone}",
+        "--check-only"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ],
+  "inputs": [
+    {
+      "id": "ouraTimezone",
+      "type": "promptString",
+      "description": "IANA timezone active during retrieval",
+      "default": "America/New_York"
     }
   ]
 }

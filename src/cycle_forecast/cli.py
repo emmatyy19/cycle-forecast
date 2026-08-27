@@ -1,15 +1,31 @@
 """Friendly interactive and scriptable command-line interface."""
 
 import argparse
+import getpass
 import json
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import asdict
+from datetime import date, datetime, timedelta
 from enum import StrEnum, auto
 from pathlib import Path
 from typing import TextIO
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from cycle_forecast import __version__
+from cycle_forecast.data.oura_auth import (
+    DEFAULT_OURA_TOKEN_PATH,
+    OuraAuthorizationError,
+    authorize_interactively,
+    save_oauth_application,
+)
+from cycle_forecast.data.oura_client import OuraApiError
+from cycle_forecast.data.oura_status import inspect_oura_status
+from cycle_forecast.data.oura_sync import (
+    DEFAULT_OURA_SNAPSHOT_DIRECTORY,
+    resolve_sync_start_date,
+    sync_oura,
+)
 from cycle_forecast.prediction import LocalPrediction, predict_from_local_files
 from cycle_forecast.training import (
     LocalTrainingResult,
@@ -45,6 +61,10 @@ class Command(StrEnum):
 
     PREDICT = auto()
     TRAIN = auto()
+    OURA_AUTHORIZE = "oura-authorize"
+    OURA_SYNC = "oura-sync"
+    OURA_SETUP = "oura-setup"
+    OURA_STATUS = "oura-status"
 
 
 class InteractiveAction(StrEnum):
@@ -95,7 +115,114 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="replace an existing selected model and run manifest",
     )
+    authorize = subparsers.add_parser(
+        "oura-authorize", help="authorize local access to one Oura account"
+    )
+    authorize.add_argument(
+        "--redirect-uri",
+        default="http://localhost:8765/callback",
+        help="redirect URI registered with the Oura OAuth application",
+    )
+    authorize.add_argument(
+        "--token-path",
+        type=Path,
+        default=DEFAULT_OURA_TOKEN_PATH,
+        help="private local OAuth token destination",
+    )
+    sync = subparsers.add_parser(
+        "oura-sync", help="retrieve validated Oura data into private snapshots"
+    )
+    sync.add_argument("--start-date", type=date.fromisoformat)
+    sync.add_argument("--end-date", type=date.fromisoformat)
+    sync.add_argument("--timezone", required=True, help="active IANA timezone")
+    sync.add_argument("--token-path", type=Path, default=DEFAULT_OURA_TOKEN_PATH)
+    sync.add_argument(
+        "--snapshot-dir", type=Path, default=DEFAULT_OURA_SNAPSHOT_DIRECTORY
+    )
+    sync.add_argument(
+        "--check-only",
+        action="store_true",
+        help="validate live retrieval without saving health payloads",
+    )
+    setup = subparsers.add_parser(
+        "oura-setup", help="guide Keychain storage, authorization, and live check"
+    )
+    setup.add_argument("--timezone", required=True, help="active IANA timezone")
+    setup.add_argument(
+        "--redirect-uri",
+        default="http://localhost:8765/callback",
+        help="redirect URI registered with the Oura OAuth application",
+    )
+    setup.add_argument("--token-path", type=Path, default=DEFAULT_OURA_TOKEN_PATH)
+    status = subparsers.add_parser(
+        "oura-status", help="show non-sensitive local Oura integration status"
+    )
+    status.add_argument("--token-path", type=Path, default=DEFAULT_OURA_TOKEN_PATH)
+    status.add_argument(
+        "--snapshot-dir", type=Path, default=DEFAULT_OURA_SNAPSHOT_DIRECTORY
+    )
     return parser
+
+
+def _load_timezone(*, timezone_name: str) -> ZoneInfo:
+    """Load one IANA timezone or raise a concise configuration error."""
+    try:
+        return ZoneInfo(timezone_name)
+    except (OSError, ValueError, ZoneInfoNotFoundError) as error:
+        raise ValueError("timezone must be an IANA timezone") from error
+
+
+def _run_oura_setup(
+    *, redirect_uri: str, timezone_name: str, token_path: Path, output: TextIO
+) -> None:
+    """Guide one-time Keychain storage, authorization, and live validation."""
+    timezone = _load_timezone(timezone_name=timezone_name)
+    client_id = input("Oura client ID: ").strip()
+    client_secret = getpass.getpass("Oura client secret: ").strip()
+    save_oauth_application(client_id=client_id, client_secret=client_secret)
+    authorize_interactively(
+        redirect_uri=redirect_uri,
+        input_fn=getpass.getpass,
+        token_path=token_path,
+    )
+    end_date = datetime.now(tz=timezone).date()
+    start_date = end_date - timedelta(days=1)
+    results = sync_oura(
+        token_path=token_path,
+        snapshot_directory=DEFAULT_OURA_SNAPSHOT_DIRECTORY,
+        start_date=start_date,
+        end_date=end_date,
+        timezone_name=timezone_name,
+        save=False,
+    )
+    print(
+        "Oura setup complete; live retrieval validated without saving payloads.",
+        file=output,
+    )
+    for result in results:
+        print(
+            f"{result.route.value}: {result.document_count} documents "
+            f"across {result.page_count} pages",
+            file=output,
+        )
+
+
+def _run_oura_status(
+    *, token_path: Path, snapshot_directory: Path, output: TextIO
+) -> None:
+    """Render non-sensitive Oura integration readiness."""
+    status = inspect_oura_status(
+        token_path=token_path,
+        snapshot_directory=snapshot_directory,
+    )
+    credentials = "ready" if status.application_credentials_available else "missing"
+    print(f"Application credentials  {credentials}", file=output)
+    print(f"Authorization token     {status.token_state}", file=output)
+    expiry = status.token_expires_at.isoformat() if status.token_expires_at else "—"
+    print(f"Token expiry            {expiry}", file=output)
+    print(f"Private snapshots       {status.snapshot_count}", file=output)
+    latest = status.latest_snapshot_end_date or "—"
+    print(f"Latest snapshot date    {latest}", file=output)
 
 
 def _discover_files(*, directories: Sequence[Path], pattern: str) -> tuple[Path, ...]:
@@ -389,15 +516,66 @@ def main(argv: Sequence[str] | None = None) -> int:
                 input_fn=input,
                 output=sys.stdout,
             )
+        elif arguments.command == Command.OURA_AUTHORIZE:
+            authorize_interactively(
+                redirect_uri=arguments.redirect_uri,
+                input_fn=getpass.getpass,
+                token_path=arguments.token_path,
+            )
+            print(f"Oura authorization saved privately at {arguments.token_path}")
+        elif arguments.command == Command.OURA_SYNC:
+            timezone = _load_timezone(timezone_name=arguments.timezone)
+            end_date = arguments.end_date or datetime.now(tz=timezone).date()
+            start_date = resolve_sync_start_date(
+                explicit_start_date=arguments.start_date,
+                snapshot_directory=arguments.snapshot_dir,
+            )
+            results = sync_oura(
+                token_path=arguments.token_path,
+                snapshot_directory=arguments.snapshot_dir,
+                start_date=start_date,
+                end_date=end_date,
+                timezone_name=arguments.timezone,
+                save=not arguments.check_only,
+            )
+            action = "validated" if arguments.check_only else "saved privately"
+            print(f"Oura retrieval {action}: {start_date} through {end_date}")
+            for result in results:
+                print(
+                    f"{result.route.value}: {result.document_count} documents "
+                    f"across {result.page_count} pages"
+                )
+        elif arguments.command == Command.OURA_SETUP:
+            _run_oura_setup(
+                redirect_uri=arguments.redirect_uri,
+                timezone_name=arguments.timezone,
+                token_path=arguments.token_path,
+                output=sys.stdout,
+            )
+        elif arguments.command == Command.OURA_STATUS:
+            _run_oura_status(
+                token_path=arguments.token_path,
+                snapshot_directory=arguments.snapshot_dir,
+                output=sys.stdout,
+            )
     except (EOFError, KeyboardInterrupt):
         print("\nCancelled.", file=sys.stderr)
         return 2
-    except (OSError, ValueError) as error:
-        operation = (
-            "train a model"
-            if arguments.command == Command.TRAIN
-            else "make a prediction"
-        )
+    except (OSError, ValueError, OuraApiError, OuraAuthorizationError) as error:
+        if arguments.command == Command.TRAIN:
+            operation = "train a model"
+        elif arguments.command == Command.PREDICT:
+            operation = "make a prediction"
+        elif arguments.command == Command.OURA_AUTHORIZE:
+            operation = "authorize Oura"
+        elif arguments.command == Command.OURA_SYNC:
+            operation = "sync Oura data"
+        elif arguments.command == Command.OURA_SETUP:
+            operation = "set up Oura"
+        elif arguments.command == Command.OURA_STATUS:
+            operation = "inspect Oura status"
+        else:
+            operation = "run the command"
         print(f"Could not {operation}: {error}", file=sys.stderr)
         return 2
     return 0
