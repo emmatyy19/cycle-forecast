@@ -54,6 +54,16 @@ class OuraSnapshotMetadata:
     end_date: date
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class LoadedOuraSnapshot:
+    """Contain one fully validated snapshot for local normalization."""
+
+    route: OuraRoute
+    retrieval_started_at: datetime
+    fingerprint: str
+    documents: tuple[OuraSleep | OuraDailySleep | OuraDailyReadiness, ...]
+
+
 class _StoredSnapshot(BaseModel):
     """Validate a complete private snapshot and its retrieval provenance."""
 
@@ -248,6 +258,56 @@ def load_snapshot_metadata(*, path: Path) -> OuraSnapshotMetadata:
             route=stored.route,
             start_date=stored.start_date,
             end_date=stored.end_date,
+        )
+    except OuraSnapshotError:
+        raise
+    except (OSError, ValidationError, ValueError, KeyError, TypeError) as error:
+        raise OuraSnapshotError(f"invalid Oura snapshot: {path}") from error
+
+
+def load_snapshot(*, path: Path) -> LoadedOuraSnapshot:
+    """Load validated health documents and retrieval provenance privately.
+
+    Parameters
+    ----------
+    path
+        Local immutable snapshot path.
+
+    Returns
+    -------
+    LoadedOuraSnapshot
+        Validated documents with the instant at which they became available.
+
+    Raises
+    ------
+    OuraSnapshotError
+        If the snapshot is unreadable, invalid, or has been modified.
+    """
+    try:
+        payload = path.read_bytes()
+        stored = _StoredSnapshot.model_validate_json(payload)
+        complete = json.loads(payload)
+        fingerprint = complete.pop("fingerprint")
+        if fingerprint != _snapshot_fingerprint(payload=complete):
+            raise OuraSnapshotError("Oura snapshot fingerprint mismatch")
+        documents_json = json.dumps(
+            stored.documents, separators=(",", ":"), sort_keys=True
+        ).encode()
+        if stored.route is OuraRoute.SLEEP:
+            documents = TypeAdapter(tuple[OuraSleep, ...]).validate_json(documents_json)
+        elif stored.route is OuraRoute.DAILY_SLEEP:
+            documents = TypeAdapter(tuple[OuraDailySleep, ...]).validate_json(
+                documents_json
+            )
+        else:
+            documents = TypeAdapter(tuple[OuraDailyReadiness, ...]).validate_json(
+                documents_json
+            )
+        return LoadedOuraSnapshot(
+            route=stored.route,
+            retrieval_started_at=stored.retrieval_started_at,
+            fingerprint=fingerprint,
+            documents=documents,
         )
     except OuraSnapshotError:
         raise

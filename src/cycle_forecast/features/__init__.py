@@ -10,14 +10,24 @@ from cycle_forecast.features.cycle_history import (
     build_development_history_features,
     build_history_feature_vector,
 )
+from cycle_forecast.features.wearable import (
+    WEARABLE_FEATURE_NAMES,
+    WEARABLE_FEATURE_VERSION,
+    WearableFeatureRow,
+    build_wearable_feature_row,
+)
 
 __all__ = [
     "CYCLE_HISTORY_FEATURE_VERSION",
     "DEFAULT_HISTORY_FEATURE_CONFIG",
+    "WEARABLE_FEATURE_NAMES",
+    "WEARABLE_FEATURE_VERSION",
     "CycleHistoryFeatureConfig",
     "HistoryFeatureDataset",
     "HistoryFeatureRow",
     "HistoryFeatureVector",
+    "WearableFeatureRow",
     "build_development_history_features",
     "build_history_feature_vector",
+    "build_wearable_feature_row",
 ]

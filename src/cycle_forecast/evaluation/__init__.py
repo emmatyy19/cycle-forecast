@@ -18,10 +18,23 @@ from cycle_forecast.evaluation.uncertainty import (
     PredictionIntervalMetrics,
     evaluate_development_uncertainty,
 )
+from cycle_forecast.evaluation.wearable import (
+    CALIBRATION_BIN_COUNT,
+    CalibrationBin,
+    DailyCandidateEvaluation,
+    DailyForecastCandidate,
+    DailyModelComparison,
+    compare_daily_forecasters,
+)
 
 __all__ = [
+    "CALIBRATION_BIN_COUNT",
     "DEFAULT_DEVELOPMENT_COMPARISON_CONFIG",
     "DEFAULT_PREDICTION_INTERVAL_CONFIG",
+    "CalibrationBin",
+    "DailyCandidateEvaluation",
+    "DailyForecastCandidate",
+    "DailyModelComparison",
     "DevelopmentComparisonConfig",
     "DevelopmentModelComparison",
     "DevelopmentUncertaintyEvaluation",
@@ -32,6 +45,7 @@ __all__ = [
     "PredictionIntervalConfig",
     "PredictionIntervalEvaluation",
     "PredictionIntervalMetrics",
+    "compare_daily_forecasters",
     "compare_development_forecasters",
     "evaluate_development_uncertainty",
 ]

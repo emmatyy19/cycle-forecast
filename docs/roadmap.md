@@ -79,7 +79,7 @@ of a period starting within a future window.
 - [x] Guide Keychain-backed Oura setup and report non-sensitive local status
 - [x] Validate retrieval against a real Oura account without logging, committing,
   or uploading personal payloads
-- [ ] Normalize overlapping snapshots by route and document ID with explicit
+- [x] Normalize overlapping snapshots by route and document ID with explicit
   version selection: use the latest version available at an operational or
   simulated prediction cutoff, preserve corrections for leakage-safe
   backtesting, and prevent repeated historical pulls from double-counting
@@ -89,9 +89,9 @@ of a period starting within a future window.
 
 ### Baselines and modeling
 
-- [ ] Establish wearable-informed baselines
-- [ ] Evaluate time-to-event and survival-analysis formulations
-- [ ] Produce calibrated daily probability distributions
+- [x] Establish wearable-informed baselines
+- [x] Evaluate time-to-event and survival-analysis formulations
+- [x] Produce calibrated daily probability distributions
 
 Phase B begins only after Phase A has a reproducible evaluation pipeline and a
 history-only baseline worth comparing against.
