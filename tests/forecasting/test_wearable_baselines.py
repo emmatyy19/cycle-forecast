@@ -2,6 +2,8 @@
 
 from datetime import UTC, date, datetime, timedelta
 
+import pytest
+
 from cycle_forecast.data.wearable_alignment import AlignedDailyObservation
 from cycle_forecast.features.wearable import WEARABLE_FEATURE_NAMES, WearableFeatureRow
 from cycle_forecast.forecasting.wearable_baselines import (
@@ -57,3 +59,22 @@ def test_neighbor_baseline_uses_only_earlier_labeled_rows() -> None:
     )
 
     assert forecast.daily_probabilities[2] > forecast.daily_probabilities[0]
+
+
+def test_baselines_reject_insufficient_or_invalid_configuration() -> None:
+    """Fail clearly when empirical evidence or settings are unusable."""
+    current = _row(index=2, outcome=None, signal=80.0)
+    with pytest.raises(ValueError, match="positive and nonempty"):
+        forecast_with_empirical_cycle_hazard(row=current, completed_cycle_lengths=())
+    with pytest.raises(ValueError, match="smoothing"):
+        forecast_with_empirical_cycle_hazard(
+            row=current, completed_cycle_lengths=(28,), smoothing=0.0
+        )
+    with pytest.raises(ValueError, match="earlier labeled"):
+        forecast_with_wearable_neighbors(row=current, training_rows=())
+    with pytest.raises(ValueError, match="must be positive"):
+        forecast_with_wearable_neighbors(
+            row=current,
+            training_rows=(_row(index=0, outcome=1, signal=80.0),),
+            neighbor_count=0,
+        )

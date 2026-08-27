@@ -10,6 +10,7 @@ import pytest
 from cycle_forecast.data.oura_client import OuraPage, OuraRoute, retrieve_collection
 from cycle_forecast.data.oura_snapshot import (
     OuraSnapshotError,
+    load_snapshot,
     load_snapshot_metadata,
     write_snapshot,
 )
@@ -48,6 +49,10 @@ def test_write_and_validate_private_snapshot(tmp_path: Path) -> None:
     assert result.document_count == 1
     assert result.fingerprint.startswith("sha256:")
     assert load_snapshot_metadata(path=result.path).end_date == date(2025, 1, 31)
+    loaded = load_snapshot(path=result.path)
+    assert loaded.route is OuraRoute.DAILY_READINESS
+    assert len(loaded.documents) == 1
+    assert loaded.fingerprint == result.fingerprint
     assert result.path.parent.stat().st_mode & 0o777 == 0o700
 
 
@@ -107,3 +112,6 @@ def test_snapshot_rejects_unsupported_api_provenance(tmp_path: Path) -> None:
 
     with pytest.raises(OuraSnapshotError, match="invalid Oura snapshot"):
         load_snapshot_metadata(path=result.path)
+
+    with pytest.raises(OuraSnapshotError, match="invalid Oura snapshot"):
+        load_snapshot(path=result.path)
