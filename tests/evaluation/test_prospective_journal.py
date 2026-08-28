@@ -209,3 +209,13 @@ def test_delayed_scores_weight_completed_cycles_equally() -> None:
     assert summary.wearable_resolved_forecast_count == 1
     assert summary.wearable_completed_cycle_count == 1
     assert summary.wearable_mean_cycle_brier_score == pytest.approx(0.0)
+
+
+def test_empty_journal_has_unresolved_summary() -> None:
+    """Represent the prospective waiting period without invented metrics."""
+    summary = summarize_prospective_performance(entries=(), history=())
+
+    assert summary.journal_forecast_count == 0
+    assert summary.completed_cycle_count == 0
+    assert summary.mean_cycle_brier_score is None
+    assert summary.wearable_completed_cycle_count == 0
