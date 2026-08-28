@@ -77,10 +77,17 @@ def test_predicts_from_resolved_prior_wearable_mornings(
 
     assert prediction.training_morning_count == 2
     assert prediction.model_version == "wearable-neighbor-v1"
+    assert prediction.temperature_model_version == "temperature-neighbor-v1"
     assert sum(
         (
             *prediction.distribution.daily_probabilities,
             prediction.distribution.after_horizon_probability,
+        )
+    ) == pytest.approx(1.0)
+    assert sum(
+        (
+            *prediction.temperature_distribution.daily_probabilities,
+            prediction.temperature_distribution.after_horizon_probability,
         )
     ) == pytest.approx(1.0)
 

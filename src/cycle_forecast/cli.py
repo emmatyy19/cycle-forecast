@@ -695,6 +695,19 @@ def _render_wearable_shadow(
             f"  {f'Within {days} days':<24}{distribution.probability_within(days=days):.1%}",
             file=output,
         )
+    temperature = prediction.temperature_distribution
+    print(f"\n  {'Temperature ablation':<24}Cycle day + temperature", file=output)
+    print(f"  {'Version':<24}{prediction.temperature_model_version}", file=output)
+    print(
+        f"  {'Today':<24}{temperature.probability_within(days=1):.1%}",
+        file=output,
+    )
+    for days in (3, 7, 14):
+        print(
+            f"  {f'Within {days} days':<24}"
+            f"{temperature.probability_within(days=days):.1%}",
+            file=output,
+        )
     print(f"  {'Use':<24}Evaluation only · not the official forecast", file=output)
 
 
@@ -761,6 +774,33 @@ def _render_prospective_performance(
     else:
         print(
             "  Wearable comparison     Waiting for a completed shadow cycle",
+            file=output,
+        )
+    if summary.temperature_completed_cycle_count:
+        assert summary.temperature_mean_cycle_logarithmic_loss is not None
+        assert summary.temperature_mean_cycle_brier_score is not None
+        print(
+            f"  {'Temperature resolved':<24}"
+            f"{summary.temperature_resolved_forecast_count}",
+            file=output,
+        )
+        print(
+            f"  {'Temperature cycles':<24}{summary.temperature_completed_cycle_count}",
+            file=output,
+        )
+        print(
+            f"  {'Temperature log loss':<24}"
+            f"{summary.temperature_mean_cycle_logarithmic_loss:.3f}",
+            file=output,
+        )
+        print(
+            f"  {'Temperature Brier':<24}"
+            f"{summary.temperature_mean_cycle_brier_score:.3f}",
+            file=output,
+        )
+    else:
+        print(
+            "  Temperature comparison  Waiting for a completed shadow cycle",
             file=output,
         )
 
@@ -922,6 +962,16 @@ def _run_daily(
             if wearable_prediction is not None
             else None
         ),
+        temperature_model_version=(
+            wearable_prediction.temperature_model_version
+            if wearable_prediction is not None
+            else None
+        ),
+        temperature_distribution=(
+            wearable_prediction.temperature_distribution
+            if wearable_prediction is not None
+            else None
+        ),
     )
     appended = append_prospective_forecast(path=journal_path, entry=entry)
     summary = summarize_prospective_performance(
@@ -1080,6 +1130,7 @@ def _render_wearable_evaluation(
 
     label_aliases = {
         "Empirical cycle hazard": "Cycle history",
+        "Temperature nearest neighbors": "Temperature only",
         "Wearable nearest neighbors": "Wearable neighbors",
         "Calibrated discrete survival": "Survival model",
     }
@@ -1126,12 +1177,20 @@ def _render_wearable_evaluation(
             file=output,
         )
     print("\nPER-CYCLE EXACT-DATE BRIER", file=output)
+    score_headers = {
+        "Empirical cycle hazard": "History",
+        "Temperature nearest neighbors": "Temp",
+        "Wearable nearest neighbors": "Neighbor",
+        "Calibrated discrete survival": "Survival",
+    }
+    candidate_headers = "".join(
+        f"{score_headers.get(entry.label, entry.label[:9]):>10}" for entry in entries
+    )
     print(
-        f"  {'Fold':>4}{'Train':>8}{'Mornings':>11}"
-        f"{'History':>10}{'Neighbor':>10}{'Survival':>10}  Winner",
+        f"  {'Fold':>4}{'Train':>8}{'Mornings':>11}{candidate_headers}  Winner",
         file=output,
     )
-    print(f"  {'─' * 74}", file=output)
+    print(f"  {'─' * (34 + 10 * len(entries) + 10)}", file=output)
     for fold in result.walk_forward.folds:
         fold_entries = fold.comparison.entries
         scores = tuple(
@@ -1151,7 +1210,7 @@ def _render_wearable_evaluation(
         print(
             f"  {fold.fold_number:>4}{fold.training_cycle_count:>8}"
             f"{fold.evaluation_row_count:>11}"
-            f"{scores[0]:>10.3f}{scores[1]:>10.3f}{scores[2]:>10.3f}  "
+            f"{''.join(f'{score:>10.3f}' for score in scores)}  "
             f"{labels[winner.label]}",
             file=output,
         )

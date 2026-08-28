@@ -27,6 +27,7 @@ def _entry(
     perfect: bool,
     point_estimate_date: date,
     wearable: bool = False,
+    temperature: bool = False,
 ) -> ProspectiveForecastEntry:
     """Build an invented exhaustive journal entry for one morning."""
     probabilities = [0.0] * 15
@@ -56,6 +57,9 @@ def _entry(
         wearable_model_version="synthetic-wearable-v1" if wearable else None,
         wearable_daily_probabilities=tuple(probabilities) if wearable else None,
         wearable_after_horizon_probability=after if wearable else None,
+        temperature_model_version=("synthetic-temperature-v1" if temperature else None),
+        temperature_daily_probabilities=(tuple(probabilities) if temperature else None),
+        temperature_after_horizon_probability=after if temperature else None,
     )
 
 
@@ -182,6 +186,7 @@ def test_delayed_scores_weight_completed_cycles_equally() -> None:
             perfect=True,
             point_estimate_date=second_start,
             wearable=True,
+            temperature=True,
         ),
         _entry(
             prediction_date=date(2025, 1, 30),
@@ -209,6 +214,9 @@ def test_delayed_scores_weight_completed_cycles_equally() -> None:
     assert summary.wearable_resolved_forecast_count == 1
     assert summary.wearable_completed_cycle_count == 1
     assert summary.wearable_mean_cycle_brier_score == pytest.approx(0.0)
+    assert summary.temperature_resolved_forecast_count == 1
+    assert summary.temperature_completed_cycle_count == 1
+    assert summary.temperature_mean_cycle_brier_score == pytest.approx(0.0)
 
 
 def test_empty_journal_has_unresolved_summary() -> None:
@@ -219,3 +227,4 @@ def test_empty_journal_has_unresolved_summary() -> None:
     assert summary.completed_cycle_count == 0
     assert summary.mean_cycle_brier_score is None
     assert summary.wearable_completed_cycle_count == 0
+    assert summary.temperature_completed_cycle_count == 0

@@ -34,6 +34,14 @@ Both baselines return probabilities for today, each of the following 14 days,
 and after day 14. Sequential conditional hazards are converted into an
 exhaustive distribution, so probability mass is never silently truncated.
 
+A separate temperature ablation uses nearest neighbors selected from only cycle
+day, Oura nighttime temperature deviation, and explicit temperature
+missingness. It shares the wearable baseline's training rows, smoothing, and
+neighbor count. Readiness, sleep, HRV, and sleep duration cannot influence this
+candidate. Comparing it with the history baseline measures whether temperature
+adds value beyond cycle timing; comparing it with the full wearable baseline
+measures whether the other allowlisted signals add value beyond temperature.
+
 ## Model and calibration
 
 The first Phase B model is discrete-time logistic survival regression. Training
@@ -81,7 +89,7 @@ Within a fold, every candidate is scored on the same mornings. Aggregate scores
 first summarize each evaluation cycle and then average those cycle scores, so a
 long cycle cannot outweigh a short cycle merely because it has more mornings.
 The report also retains each cycle's scores and counts cycle-level wins without
-printing private dates. This contract is versioned as `wearable-evaluation-v2`.
+printing private dates.
 
 Private-safe diagnostics describe the evaluated mornings without printing dates
 or health measurements. They report wearable-field missingness, observed event
@@ -93,7 +101,8 @@ scores for cycle days 1-10, 11-20, and 21 or later. The exhaustive later class
 is represented as offset 15 for offset-error summaries. These diagnostic
 aggregates describe mornings, while the headline model scores continue to give
 each evaluation cycle equal weight. Per-cycle tables rank every candidate and
-omit the private cycle dates.
+omit the private cycle dates. This contract is versioned as
+`wearable-evaluation-v3` after adding the temperature ablation.
 
 ## Operational daily forecast
 
@@ -115,9 +124,10 @@ official forecast.
 
 The daily workflow also runs the wearable nearest-neighbor candidate in shadow
 mode from the same cutoff as the official history forecast. It labels this
-output experimental, journals both exhaustive distributions together, and
-reports delayed, equal-cycle scores after outcomes arrive. Missing or
-insufficient wearable input never prevents the official forecast.
+output experimental and runs the temperature ablation from the same resolved
+mornings. It journals all exhaustive distributions together and reports
+delayed, equal-cycle scores after outcomes arrive. Missing or insufficient
+wearable input never prevents the official forecast.
 
 For longer-range convenience, the same report includes one separately labeled
 point estimate. It prefers the selected packaged Phase A model and otherwise

@@ -18,6 +18,9 @@ EMPIRICAL_HAZARD_BASELINE_VERSION: Final = "empirical-cycle-hazard-v1"
 WEARABLE_NEIGHBOR_BASELINE_VERSION: Final = "wearable-neighbor-v1"
 """Semantic version of the nonparametric wearable-informed baseline."""
 
+TEMPERATURE_NEIGHBOR_BASELINE_VERSION: Final = "temperature-neighbor-v1"
+"""Version of the cycle-day and temperature-only neighbor ablation."""
+
 
 def forecast_with_empirical_cycle_hazard(
     *,
@@ -140,6 +143,57 @@ def _distance(
     return sqrt(total)
 
 
+def _temperature_scales(*, rows: tuple[WearableFeatureRow, ...]) -> tuple[float, float]:
+    """Calculate training-only scales for cycle day and observed temperature."""
+    cycle_days = tuple(row.values[0] for row in rows)
+    temperatures = tuple(row.values[2] for row in rows if row.values[7] == 0.0)
+    cycle_day_deviation = pstdev(cycle_days) if len(cycle_days) > 1 else 0.0
+    temperature_deviation = pstdev(temperatures) if len(temperatures) > 1 else 0.0
+    return (
+        cycle_day_deviation if cycle_day_deviation > 0.0 else 1.0,
+        temperature_deviation if temperature_deviation > 0.0 else 1.0,
+    )
+
+
+def _temperature_distance(
+    *,
+    current: WearableFeatureRow,
+    candidate: WearableFeatureRow,
+    scales: tuple[float, float],
+) -> float:
+    """Calculate distance using only cycle day and temperature deviation."""
+    total = ((current.values[0] - candidate.values[0]) / scales[0]) ** 2
+    current_missing = current.values[7] == 1.0
+    candidate_missing = candidate.values[7] == 1.0
+    if current_missing != candidate_missing:
+        total += 1.0
+    elif not current_missing:
+        total += ((current.values[2] - candidate.values[2]) / scales[1]) ** 2
+    return sqrt(total)
+
+
+def _distribution_from_neighbors(
+    *,
+    neighbors: tuple[WearableFeatureRow, ...],
+    row: WearableFeatureRow,
+    smoothing: float,
+) -> DailyPeriodDistribution:
+    """Convert labeled neighbor outcomes into one smoothed distribution."""
+    counts = [smoothing] * (DAILY_FORECAST_HORIZON_DAYS + 1)
+    for candidate in neighbors:
+        assert candidate.outcome_offset_days is not None
+        counts[min(candidate.outcome_offset_days, DAILY_FORECAST_HORIZON_DAYS)] += 1.0
+    total = fmean(counts) * len(counts)
+    return DailyPeriodDistribution(
+        prediction_date=row.aligned.prediction_date,
+        prediction_cutoff=row.aligned.prediction_cutoff,
+        daily_probabilities=tuple(
+            count / total for count in counts[:DAILY_FORECAST_HORIZON_DAYS]
+        ),
+        after_horizon_probability=counts[-1] / total,
+    )
+
+
 def forecast_with_wearable_neighbors(
     *,
     row: WearableFeatureRow,
@@ -186,16 +240,56 @@ def forecast_with_wearable_neighbors(
             key=lambda item: (item[0], item[1].aligned.prediction_cutoff),
         )[:neighbor_count]
     )
-    counts = [smoothing] * (DAILY_FORECAST_HORIZON_DAYS + 1)
-    for candidate in neighbors:
-        assert candidate.outcome_offset_days is not None
-        counts[min(candidate.outcome_offset_days, DAILY_FORECAST_HORIZON_DAYS)] += 1.0
-    total = fmean(counts) * len(counts)
-    return DailyPeriodDistribution(
-        prediction_date=row.aligned.prediction_date,
-        prediction_cutoff=row.aligned.prediction_cutoff,
-        daily_probabilities=tuple(
-            count / total for count in counts[:DAILY_FORECAST_HORIZON_DAYS]
-        ),
-        after_horizon_probability=counts[-1] / total,
+    return _distribution_from_neighbors(
+        neighbors=neighbors,
+        row=row,
+        smoothing=smoothing,
+    )
+
+
+def forecast_with_temperature_neighbors(
+    *,
+    row: WearableFeatureRow,
+    training_rows: tuple[WearableFeatureRow, ...],
+    neighbor_count: int = 20,
+    smoothing: float = 1.0,
+) -> DailyPeriodDistribution:
+    """Forecast from earlier mornings using only cycle day and temperature.
+
+    This deliberately restricted candidate measures whether Oura temperature
+    adds value beyond cycle timing without allowing other wearable signals to
+    influence the result.
+    """
+    labeled = tuple(
+        candidate
+        for candidate in training_rows
+        if candidate.outcome_offset_days is not None
+        and candidate.aligned.prediction_cutoff < row.aligned.prediction_cutoff
+    )
+    if not labeled:
+        raise ValueError("temperature baseline requires earlier labeled rows")
+    if neighbor_count < 1 or smoothing <= 0.0:
+        raise ValueError("neighbor_count and smoothing must be positive")
+    scales = _temperature_scales(rows=labeled)
+    neighbors = tuple(
+        candidate
+        for _, candidate in sorted(
+            (
+                (
+                    _temperature_distance(
+                        current=row,
+                        candidate=candidate,
+                        scales=scales,
+                    ),
+                    candidate,
+                )
+                for candidate in labeled
+            ),
+            key=lambda item: (item[0], item[1].aligned.prediction_cutoff),
+        )[:neighbor_count]
+    )
+    return _distribution_from_neighbors(
+        neighbors=neighbors,
+        row=row,
+        smoothing=smoothing,
     )

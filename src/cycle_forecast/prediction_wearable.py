@@ -15,18 +15,22 @@ from cycle_forecast.features.wearable import (
 )
 from cycle_forecast.forecasting.daily import DailyPeriodDistribution
 from cycle_forecast.forecasting.wearable_baselines import (
+    TEMPERATURE_NEIGHBOR_BASELINE_VERSION,
     WEARABLE_NEIGHBOR_BASELINE_VERSION,
+    forecast_with_temperature_neighbors,
     forecast_with_wearable_neighbors,
 )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class WearableDailyPrediction:
-    """Contain one experimental cutoff-safe wearable forecast."""
+    """Contain full-wearable and temperature-ablation shadow forecasts."""
 
     model_version: str
     training_morning_count: int
     distribution: DailyPeriodDistribution
+    temperature_model_version: str
+    temperature_distribution: DailyPeriodDistribution
 
 
 def predict_daily_with_wearable_neighbors(
@@ -84,13 +88,21 @@ def predict_daily_with_wearable_neighbors(
         next_cycle_start=None,
         observed_through=prediction_date,
     )
+    training = tuple(training_rows)
     distribution = forecast_with_wearable_neighbors(
         row=current_row,
-        training_rows=tuple(training_rows),
+        training_rows=training,
+        neighbor_count=neighbor_count,
+    )
+    temperature_distribution = forecast_with_temperature_neighbors(
+        row=current_row,
+        training_rows=training,
         neighbor_count=neighbor_count,
     )
     return WearableDailyPrediction(
         model_version=WEARABLE_NEIGHBOR_BASELINE_VERSION,
         training_morning_count=len(training_rows),
         distribution=distribution,
+        temperature_model_version=TEMPERATURE_NEIGHBOR_BASELINE_VERSION,
+        temperature_distribution=temperature_distribution,
     )

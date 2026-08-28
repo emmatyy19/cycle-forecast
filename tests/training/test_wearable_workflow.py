@@ -131,8 +131,9 @@ def test_exploratory_backfill_compares_all_forecasters_by_complete_cycle(
         1,
         2,
     )
-    assert len(result.walk_forward.entries) == 3
-    assert len(result.diagnostics.candidates) == 3
+    assert len(result.walk_forward.entries) == 4
+    assert len(result.diagnostics.candidates) == 4
+    assert result.walk_forward.entries[1].label == "Temperature nearest neighbors"
     assert set(result.diagnostics.data.missingness_rates) == {
         "Readiness score",
         "Temperature",

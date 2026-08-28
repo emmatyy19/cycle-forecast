@@ -100,6 +100,8 @@ of a period starting within a future window.
 - [x] Add private diagnostics for wearable missingness, outcome prevalence,
   actual-outcome probability, predicted versus actual offset, calibration,
   cycle-day performance, and per-cycle rankings
+- [x] Add a temperature-focused ablation to measure whether Oura temperature
+  improves on cycle timing without relying on other wearable signals
 - [ ] Compare or refine wearable features and model formulations only when the
   walk-forward diagnostics identify a specific weakness worth addressing
 - [ ] Accumulate enough morning snapshots to evaluate at least three cycles with

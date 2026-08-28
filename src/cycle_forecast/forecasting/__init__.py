@@ -45,9 +45,11 @@ from cycle_forecast.forecasting.validation import (
 )
 from cycle_forecast.forecasting.wearable_baselines import (
     EMPIRICAL_HAZARD_BASELINE_VERSION,
+    TEMPERATURE_NEIGHBOR_BASELINE_VERSION,
     WEARABLE_NEIGHBOR_BASELINE_VERSION,
     forecast_with_empirical_cycle_hazard,
     forecast_with_empirical_cycle_hazard_context,
+    forecast_with_temperature_neighbors,
     forecast_with_wearable_neighbors,
 )
 
@@ -64,6 +66,7 @@ __all__ = [
     "PREVIOUS_CYCLE_BASELINE_VERSION",
     "ROLLING_MEAN_BASELINE_VERSION",
     "ROLLING_MEDIAN_BASELINE_VERSION",
+    "TEMPERATURE_NEIGHBOR_BASELINE_VERSION",
     "WEARABLE_NEIGHBOR_BASELINE_VERSION",
     "CycleLengthForecast",
     "DailyForecastEvaluation",
@@ -86,6 +89,7 @@ __all__ = [
     "forecast_with_previous_cycle",
     "forecast_with_rolling_mean",
     "forecast_with_rolling_median",
+    "forecast_with_temperature_neighbors",
     "forecast_with_wearable_neighbors",
     "generate_walk_forward_forecasts",
     "round_cycle_length_days",
