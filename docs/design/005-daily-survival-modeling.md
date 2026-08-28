@@ -113,6 +113,12 @@ still occurs first so prospective wearable evidence accumulates continuously;
 the terminal report states that wearable models are not yet used for the
 official forecast.
 
+The daily workflow also runs the wearable nearest-neighbor candidate in shadow
+mode from the same cutoff as the official history forecast. It labels this
+output experimental, journals both exhaustive distributions together, and
+reports delayed, equal-cycle scores after outcomes arrive. Missing or
+insufficient wearable input never prevents the official forecast.
+
 For longer-range convenience, the same report includes one separately labeled
 point estimate. It prefers the selected packaged Phase A model and otherwise
 uses the median completed cycle length, rounded to the nearest operational day

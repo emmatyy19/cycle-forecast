@@ -125,7 +125,7 @@ history-only baseline worth comparing against.
   reusing the current packaged model between period starts
 - [x] Journal the first forecast from each daily run privately and score resolved
   forecasts automatically with equal weight for every completed cycle
-- [ ] Show wearable forecasts as experimental comparisons until promotion
+- [x] Show wearable forecasts as experimental comparisons until promotion
   criteria based on prospective cycle-level evaluation are satisfied
 
 ## Later operational milestones

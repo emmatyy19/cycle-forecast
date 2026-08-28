@@ -21,6 +21,7 @@ from cycle_forecast.data.oura_auth import (
     save_oauth_application,
 )
 from cycle_forecast.data.oura_client import OuraApiError
+from cycle_forecast.data.oura_snapshot import load_snapshot
 from cycle_forecast.data.oura_status import inspect_oura_status
 from cycle_forecast.data.oura_sync import (
     DEFAULT_OURA_SNAPSHOT_DIRECTORY,
@@ -45,6 +46,10 @@ from cycle_forecast.prediction_daily import (
     HistoryDailyPrediction,
     estimate_next_start_from_history,
     predict_daily_from_history,
+)
+from cycle_forecast.prediction_wearable import (
+    WearableDailyPrediction,
+    predict_daily_with_wearable_neighbors,
 )
 from cycle_forecast.training import (
     DailyModelRefreshResult,
@@ -665,9 +670,32 @@ def _render_daily_prediction(
     )
     print(f"  {'Model version':<24}{prediction.model_version}", file=output)
     print(
-        f"  {'Wearable models':<24}Experimental · not used in this forecast",
+        f"  {'Official forecast':<24}Cycle history",
         file=output,
     )
+
+
+def _render_wearable_shadow(
+    *, prediction: WearableDailyPrediction | None, output: TextIO
+) -> None:
+    """Print the experimental forecast without presenting it as official."""
+    print("\nEXPERIMENTAL WEARABLE SHADOW", file=output)
+    if prediction is None:
+        print(f"  {'Status':<24}Unavailable today · history forecast kept", file=output)
+        return
+    distribution = prediction.distribution
+    print(f"  {'Model':<24}Wearable nearest neighbors", file=output)
+    print(f"  {'Version':<24}{prediction.model_version}", file=output)
+    print(
+        f"  {'Training mornings':<24}{prediction.training_morning_count}", file=output
+    )
+    print(f"  {'Today':<24}{distribution.probability_within(days=1):.1%}", file=output)
+    for days in (3, 7, 14):
+        print(
+            f"  {f'Within {days} days':<24}{distribution.probability_within(days=days):.1%}",
+            file=output,
+        )
+    print(f"  {'Use':<24}Evaluation only · not the official forecast", file=output)
 
 
 def _render_prospective_performance(
@@ -710,6 +738,31 @@ def _render_prospective_performance(
         file=output,
     )
     print("  Scores give every completed cycle equal weight.", file=output)
+    if summary.wearable_completed_cycle_count:
+        assert summary.wearable_mean_cycle_logarithmic_loss is not None
+        assert summary.wearable_mean_cycle_brier_score is not None
+        print("\n  PAIRED SHADOW COMPARISON", file=output)
+        print(
+            f"  {'Wearable resolved':<24}{summary.wearable_resolved_forecast_count}",
+            file=output,
+        )
+        print(
+            f"  {'Wearable completed cycles':<24}{summary.wearable_completed_cycle_count}",
+            file=output,
+        )
+        print(
+            f"  {'Wearable log loss':<24}{summary.wearable_mean_cycle_logarithmic_loss:.3f}",
+            file=output,
+        )
+        print(
+            f"  {'Wearable Brier':<24}{summary.wearable_mean_cycle_brier_score:.3f}",
+            file=output,
+        )
+    else:
+        print(
+            "  Wearable comparison     Waiting for a completed shadow cycle",
+            file=output,
+        )
 
 
 def _render_daily_model_refresh(
@@ -818,10 +871,22 @@ def _run_daily(
     _render_daily_model_refresh(result=refresh, output=output)
 
     print("\n4. Producing today's forecast…", file=output)
+    saved_snapshots = tuple(
+        result.snapshot for result in sync_results if result.snapshot is not None
+    )
+    shared_cutoff = (
+        max(
+            load_snapshot(path=result.path).retrieval_started_at
+            for result in saved_snapshots
+        )
+        if saved_snapshots
+        else None
+    )
     prediction = predict_daily_from_history(
         history_path=resolved_history,
         prediction_date=resolved_today,
         timezone_name=resolved_timezone,
+        prediction_cutoff=shared_cutoff,
     )
     point_estimate = estimate_next_start_from_history(
         history_path=resolved_history,
@@ -832,11 +897,31 @@ def _run_daily(
         point_estimate=point_estimate,
         output=output,
     )
+    try:
+        wearable_prediction = predict_daily_with_wearable_neighbors(
+            history_path=resolved_history,
+            snapshot_directory=snapshot_directory,
+            prediction_date=resolved_today,
+            prediction_cutoff=prediction.distribution.prediction_cutoff,
+        )
+    except ValueError:
+        wearable_prediction = None
+    _render_wearable_shadow(prediction=wearable_prediction, output=output)
     entry = build_prospective_entry(
         prediction=prediction,
         point_estimate=point_estimate,
         model_dataset_fingerprint=refresh.dataset_fingerprint,
         oura_synced_through=resolved_today,
+        wearable_model_version=(
+            wearable_prediction.model_version
+            if wearable_prediction is not None
+            else None
+        ),
+        wearable_distribution=(
+            wearable_prediction.distribution
+            if wearable_prediction is not None
+            else None
+        ),
     )
     appended = append_prospective_forecast(path=journal_path, entry=entry)
     summary = summarize_prospective_performance(
