@@ -92,13 +92,27 @@ of a period starting within a future window.
 - [x] Establish wearable-informed baselines
 - [x] Evaluate time-to-event and survival-analysis formulations
 - [x] Produce calibrated daily probability distributions
+- [x] Expose prospective and explicitly optimistic backfill evaluation through
+  a private local workflow
+- [ ] Expand evaluation to cycle-level walk-forward folds so multiple unseen
+  cycles contribute per-cycle and aggregate scores without long cycles receiving
+  extra weight
+- [ ] Add private diagnostics for wearable missingness, outcome prevalence,
+  actual-outcome probability, predicted versus actual offset, calibration,
+  cycle-day performance, and per-cycle rankings
+- [ ] Compare or refine wearable features and model formulations only when the
+  walk-forward diagnostics identify a specific weakness worth addressing
+- [ ] Accumulate enough morning snapshots to evaluate at least three cycles with
+  strict prospective retrieval provenance
 
 Phase B begins only after Phase A has a reproducible evaluation pipeline and a
 history-only baseline worth comparing against.
 
 ## Later operational milestones
 
-- [ ] Add model packaging and version metadata
+- [ ] Add wearable model packaging and version metadata only after walk-forward
+  and prospective evidence show reliable improvement over the cycle-history
+  baseline
 - [ ] Add a prediction service when a stable prediction contract exists
 - [ ] Containerize the service when deployment requires it
 - [ ] Define monitoring signals and delayed-label evaluation

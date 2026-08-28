@@ -12,6 +12,12 @@ from cycle_forecast.data.oura_auth import OuraAuthorizationError, OuraToken
 from cycle_forecast.data.oura_client import OuraRoute
 from cycle_forecast.data.oura_status import OuraStatus
 from cycle_forecast.data.oura_sync import OuraRouteSyncResult
+from cycle_forecast.evaluation.wearable import (
+    DailyCandidateEvaluation,
+    DailyModelComparison,
+)
+from cycle_forecast.forecasting.daily import DailyForecastEvaluation
+from cycle_forecast.training import WearableEvaluationMode, WearableEvaluationResult
 from tests.test_prediction import write_test_model
 
 
@@ -400,3 +406,144 @@ def test_oura_setup_rejects_non_iana_timezone_before_prompting(
     captured = capsys.readouterr()
     assert status == 2
     assert "timezone must be an IANA timezone" in captured.err
+
+
+def test_wearable_evaluate_command_renders_private_safe_summary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Expose evaluation sufficiency and the optimistic-mode warning."""
+    result = WearableEvaluationResult(
+        workflow_version="wearable-evaluation-v1",
+        mode=WearableEvaluationMode.EXPLORATORY_BACKFILL,
+        optimistic_backfill_assumption=True,
+        snapshot_count=3,
+        normalized_day_count=60,
+        aligned_row_count=50,
+        uncensored_row_count=45,
+        training_cycle_count=2,
+        calibration_cycle_count=1,
+        evaluation_cycle_count=1,
+        training_row_count=25,
+        calibration_row_count=10,
+        evaluation_row_count=10,
+        comparison=DailyModelComparison(
+            prediction_dates=(date(2025, 3, 1),),
+            entries=(
+                DailyCandidateEvaluation(
+                    label="Empirical cycle hazard",
+                    version="history-v1",
+                    evaluation=DailyForecastEvaluation(
+                        count=10,
+                        logarithmic_loss=0.2,
+                        multiclass_brier_score=0.05,
+                        window_brier_scores={1: 0.0, 3: 0.01, 7: 0.02, 14: 0.03},
+                    ),
+                    calibration={},
+                ),
+                DailyCandidateEvaluation(
+                    label="Wearable nearest neighbors",
+                    version="neighbors-v1",
+                    evaluation=DailyForecastEvaluation(
+                        count=10,
+                        logarithmic_loss=0.9,
+                        multiclass_brier_score=0.3,
+                        window_brier_scores={1: 0.01, 3: 0.02, 7: 0.05, 14: 0.2},
+                    ),
+                    calibration={},
+                ),
+            ),
+        ),
+    )
+
+    def evaluate(**_: object) -> WearableEvaluationResult:
+        """Return invented privacy-safe wearable evaluation metadata."""
+        return result
+
+    monkeypatch.setattr(cli, "evaluate_local_wearable_models", evaluate)
+
+    status = main(
+        (
+            "wearable-evaluate",
+            "--history",
+            str(tmp_path / "history.csv"),
+            "--snapshot-dir",
+            str(tmp_path / "snapshots"),
+            "--timezone",
+            "America/New_York",
+            "--mode",
+            "exploratory-backfill",
+            "--as-of-date",
+            "2025-03-22",
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert status == 0
+    assert "Optimistic historical assumption" in captured.out
+    assert "TEMPORAL SPLIT" in captured.out
+    assert "EXACT-DATE SCORES" in captured.out
+    assert "PLANNING-WINDOW BRIER" in captured.out
+    assert "Best log loss: Cycle history" in captured.out
+    assert "Normalized days" in captured.out
+    assert "60" in captured.out
+    assert str(tmp_path) not in captured.out
+
+
+def test_bare_command_guides_wearable_evaluation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Select history, availability mode, and timezone without command flags."""
+    history_directory = tmp_path / "data/raw"
+    history_directory.mkdir(parents=True)
+    history_path = history_directory / "history.csv"
+    history_path.write_text(
+        Path("data/synthetic/sample_cycle_history.csv").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    result = WearableEvaluationResult(
+        workflow_version="wearable-evaluation-v1",
+        mode=WearableEvaluationMode.EXPLORATORY_BACKFILL,
+        optimistic_backfill_assumption=True,
+        snapshot_count=3,
+        normalized_day_count=60,
+        aligned_row_count=50,
+        uncensored_row_count=45,
+        training_cycle_count=2,
+        calibration_cycle_count=1,
+        evaluation_cycle_count=1,
+        training_row_count=25,
+        calibration_row_count=10,
+        evaluation_row_count=10,
+        comparison=DailyModelComparison(prediction_dates=(), entries=()),
+    )
+    received: dict[str, object] = {}
+
+    def evaluate(**arguments: object) -> WearableEvaluationResult:
+        """Capture guided selections and return invented aggregate results."""
+        received.update(arguments)
+        return result
+
+    answers = iter(("3", "1", "2", "America/New_York"))
+
+    def answer_prompt(_: str) -> str:
+        """Return the next guided wearable selection."""
+        return next(answers)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("builtins.input", answer_prompt)
+    monkeypatch.setattr(cli, "evaluate_local_wearable_models", evaluate)
+
+    status = main(())
+
+    captured = capsys.readouterr()
+    assert status == 0
+    assert "[3] Evaluate wearable models" in captured.out
+    assert "EVALUATION MODE" in captured.out
+    assert "Optimistic historical assumption" in captured.out
+    assert received["history_path"] == Path("data/raw/history.csv")
+    assert received["mode"] is WearableEvaluationMode.EXPLORATORY_BACKFILL
+    assert received["timezone_name"] == "America/New_York"

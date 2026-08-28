@@ -29,6 +29,9 @@ from cycle_forecast.data.oura_sync import (
 from cycle_forecast.prediction import LocalPrediction, predict_from_local_files
 from cycle_forecast.training import (
     LocalTrainingResult,
+    WearableEvaluationMode,
+    WearableEvaluationResult,
+    evaluate_local_wearable_models,
     load_model_package,
     train_from_local_history,
 )
@@ -48,6 +51,9 @@ DEFAULT_ARTIFACT_DIRECTORY = Path("artifacts")
 RULE = "─" * 54
 """Consistent visual separator for the terminal interface."""
 
+WEARABLE_RULE = "─" * 78
+"""Wider separator for readable wearable comparison tables."""
+
 
 class OutputFormat(StrEnum):
     """Identify supported prediction output formats."""
@@ -65,6 +71,7 @@ class Command(StrEnum):
     OURA_SYNC = "oura-sync"
     OURA_SETUP = "oura-setup"
     OURA_STATUS = "oura-status"
+    WEARABLE_EVALUATE = "wearable-evaluate"
 
 
 class InteractiveAction(StrEnum):
@@ -72,6 +79,7 @@ class InteractiveAction(StrEnum):
 
     PREDICT = auto()
     TRAIN = auto()
+    WEARABLE_EVALUATE = "wearable-evaluate"
     EXIT = auto()
 
 
@@ -160,6 +168,43 @@ def _parser() -> argparse.ArgumentParser:
     status.add_argument("--token-path", type=Path, default=DEFAULT_OURA_TOKEN_PATH)
     status.add_argument(
         "--snapshot-dir", type=Path, default=DEFAULT_OURA_SNAPSHOT_DIRECTORY
+    )
+    wearable = subparsers.add_parser(
+        "wearable-evaluate",
+        help="compare wearable baselines and survival modeling locally",
+    )
+    wearable.add_argument("--history", type=Path, required=True)
+    wearable.add_argument(
+        "--snapshot-dir", type=Path, default=DEFAULT_OURA_SNAPSHOT_DIRECTORY
+    )
+    wearable.add_argument("--timezone", required=True, help="evaluation IANA timezone")
+    wearable.add_argument(
+        "--mode",
+        type=WearableEvaluationMode,
+        choices=tuple(WearableEvaluationMode),
+        default=WearableEvaluationMode.PROSPECTIVE,
+    )
+    wearable.add_argument(
+        "--as-of-date",
+        type=date.fromisoformat,
+        help="last date known to have no later period start (default: today)",
+    )
+    wearable.add_argument(
+        "--prediction-hour",
+        type=int,
+        default=9,
+        help="assumed local hour for exploratory backfill (default: 9)",
+    )
+    wearable.add_argument(
+        "--neighbors",
+        type=int,
+        default=20,
+        help="nearest prior mornings used by wearable baseline (default: 20)",
+    )
+    wearable.add_argument(
+        "--json",
+        action="store_true",
+        help="print machine-readable local results",
     )
     return parser
 
@@ -293,18 +338,57 @@ def _choose_action(
     print("What would you like to do?", file=output)
     print("  [1] Make a prediction", file=output)
     print("  [2] Train or update a model", file=output)
-    print("  [3] Exit", file=output)
+    print("  [3] Evaluate wearable models", file=output)
+    print("  [4] Exit", file=output)
     choices = {
         "1": InteractiveAction.PREDICT,
         "2": InteractiveAction.TRAIN,
-        "3": InteractiveAction.EXIT,
+        "3": InteractiveAction.WEARABLE_EVALUATE,
+        "4": InteractiveAction.EXIT,
     }
     while True:
         answer = input_fn("\nSelect: ").strip()
         action = choices.get(answer)
         if action is not None:
             return action
-        print("Please choose 1, 2, or 3.", file=output)
+        print("Please choose 1, 2, 3, or 4.", file=output)
+
+
+def _choose_wearable_mode(
+    *, input_fn: Callable[[str], str], output: TextIO
+) -> WearableEvaluationMode:
+    """Explain and select a local wearable availability assumption."""
+    print("\nEVALUATION MODE", file=output)
+    print(
+        "  [1] Prospective — strict; uses only real morning retrieval cutoffs",
+        file=output,
+    )
+    print(
+        "  [2] Exploratory backfill — test historical data with an optimistic "
+        "availability assumption",
+        file=output,
+    )
+    while True:
+        answer = input_fn("Select [1]: ").strip() or "1"
+        if answer == "1":
+            return WearableEvaluationMode.PROSPECTIVE
+        if answer == "2":
+            return WearableEvaluationMode.EXPLORATORY_BACKFILL
+        print("Please choose 1 or 2.", file=output)
+
+
+def _choose_timezone(*, input_fn: Callable[[str], str], output: TextIO) -> str:
+    """Prompt until the user supplies a valid IANA timezone name."""
+    while True:
+        timezone_name = input_fn(
+            "IANA timezone (for example America/Los_Angeles): "
+        ).strip()
+        try:
+            _load_timezone(timezone_name=timezone_name)
+        except ValueError as error:
+            print(str(error), file=output)
+            continue
+        return timezone_name
 
 
 def _render_human(*, prediction: LocalPrediction, output: TextIO) -> None:
@@ -398,6 +482,133 @@ def _render_training_result(*, result: LocalTrainingResult, output: TextIO) -> N
     print(f"Run manifest   {result.run_path}", file=output)
 
 
+def _render_wearable_evaluation(
+    *, result: WearableEvaluationResult, output: TextIO
+) -> None:
+    """Print privacy-safe data sufficiency and probability scores."""
+    print("\nWEARABLE MODEL EVALUATION", file=output)
+    print(WEARABLE_RULE, file=output)
+    print("\nMODE", file=output)
+    print(f"  {result.mode.value}", file=output)
+    if result.optimistic_backfill_assumption:
+        print(
+            "  ⚠ Optimistic historical assumption; these scores are not a "
+            "leakage-safe estimate.",
+            file=output,
+        )
+    print("\nDATA USED", file=output)
+    print(f"  {'Validated snapshots':<24}{result.snapshot_count:>8}", file=output)
+    print(f"  {'Normalized days':<24}{result.normalized_day_count:>8}", file=output)
+    print(f"  {'Aligned mornings':<24}{result.aligned_row_count:>8}", file=output)
+    print(
+        f"  {'Usable labeled mornings':<24}{result.uncensored_row_count:>8}",
+        file=output,
+    )
+
+    print("\nTEMPORAL SPLIT", file=output)
+    print(f"  {'Purpose':<16}{'Cycles':>8}{'Mornings':>12}", file=output)
+    print(f"  {'─' * 36}", file=output)
+    print(
+        f"  {'Train':<16}{result.training_cycle_count:>8}"
+        f"{result.training_row_count:>12}",
+        file=output,
+    )
+    print(
+        f"  {'Calibrate':<16}{result.calibration_cycle_count:>8}"
+        f"{result.calibration_row_count:>12}",
+        file=output,
+    )
+    print(
+        f"  {'Evaluate':<16}{result.evaluation_cycle_count:>8}"
+        f"{result.evaluation_row_count:>12}",
+        file=output,
+    )
+
+    entries = result.comparison.entries
+    if not entries:
+        print("\nNo evaluated candidates.", file=output)
+        return
+
+    label_aliases = {
+        "Empirical cycle hazard": "Cycle history",
+        "Wearable nearest neighbors": "Wearable neighbors",
+        "Calibrated discrete survival": "Survival model",
+    }
+    labels = {
+        entry.label: label_aliases.get(entry.label, entry.label) for entry in entries
+    }
+    print("\nEXACT-DATE SCORES  (lower is better)", file=output)
+    print(
+        "  Log loss strongly penalizes confident mistakes; Brier is squared "
+        "probability error.",
+        file=output,
+    )
+    print(f"  {'Method':<24}{'Log loss':>12}{'Brier':>12}", file=output)
+    print(f"  {'─' * 48}", file=output)
+    for entry in result.comparison.entries:
+        metrics = entry.evaluation
+        print(
+            f"  {labels[entry.label]:<24}"
+            f"{metrics.logarithmic_loss:>12.3f}"
+            f"{metrics.multiclass_brier_score:>12.3f}",
+            file=output,
+        )
+    best_log_loss = min(entries, key=lambda entry: entry.evaluation.logarithmic_loss)
+    best_brier = min(entries, key=lambda entry: entry.evaluation.multiclass_brier_score)
+    print(f"\n  Best log loss: {labels[best_log_loss.label]}", file=output)
+    print(f"  Best Brier:    {labels[best_brier.label]}", file=output)
+
+    print("\nPLANNING-WINDOW BRIER  (lower is better)", file=output)
+    print("  Windows include today. Near-zero values may round to 0.000.", file=output)
+    print(
+        f"  {'Method':<24}{'Today':>10}{'3 days':>10}{'7 days':>10}{'14 days':>10}",
+        file=output,
+    )
+    print(f"  {'─' * 64}", file=output)
+    for entry in entries:
+        scores = entry.evaluation.window_brier_scores
+        print(
+            f"  {labels[entry.label]:<24}"
+            f"{scores[1]:>10.3f}{scores[3]:>10.3f}"
+            f"{scores[7]:>10.3f}{scores[14]:>10.3f}",
+            file=output,
+        )
+    print(
+        "\n  Treat this as preliminary: evaluation mornings come from "
+        f"{result.evaluation_cycle_count} held-out cycle(s).",
+        file=output,
+    )
+
+
+def _run_wearable_evaluation(
+    *,
+    history_path: Path,
+    snapshot_directory: Path,
+    timezone_name: str,
+    mode: WearableEvaluationMode,
+    observed_through: date,
+    prediction_hour: int,
+    neighbor_count: int,
+    output_format: OutputFormat,
+    output: TextIO,
+) -> WearableEvaluationResult:
+    """Evaluate local wearable methods and render private-safe results."""
+    result = evaluate_local_wearable_models(
+        history_path=history_path,
+        snapshot_directory=snapshot_directory,
+        timezone_name=timezone_name,
+        mode=mode,
+        observed_through=observed_through,
+        prediction_hour=prediction_hour,
+        neighbor_count=neighbor_count,
+    )
+    if output_format is OutputFormat.JSON:
+        print(json.dumps(asdict(result), default=str, sort_keys=True), file=output)
+    else:
+        _render_wearable_evaluation(result=result, output=output)
+    return result
+
+
 def _run_training(
     *,
     history_path: Path | None,
@@ -443,6 +654,32 @@ def _run_interactive(*, input_fn: Callable[[str], str], output: TextIO) -> None:
             input_fn=input_fn,
             output=output,
             announce=False,
+        )
+        return
+    if action is InteractiveAction.WEARABLE_EVALUATE:
+        history_path = _choose_path(
+            label="CYCLE HISTORY",
+            candidates=_discover_files(
+                directories=DEFAULT_HISTORY_DIRECTORIES,
+                pattern="*.csv",
+            ),
+            input_fn=input_fn,
+            output=output,
+        )
+        mode = _choose_wearable_mode(input_fn=input_fn, output=output)
+        timezone_name = _choose_timezone(input_fn=input_fn, output=output)
+        timezone = _load_timezone(timezone_name=timezone_name)
+        print("\nComparing wearable forecasting methods…", file=output)
+        _run_wearable_evaluation(
+            history_path=history_path,
+            snapshot_directory=DEFAULT_OURA_SNAPSHOT_DIRECTORY,
+            timezone_name=timezone_name,
+            mode=mode,
+            observed_through=datetime.now(tz=timezone).date(),
+            prediction_hour=9,
+            neighbor_count=20,
+            output_format=OutputFormat.HUMAN,
+            output=output,
         )
         return
 
@@ -558,6 +795,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 snapshot_directory=arguments.snapshot_dir,
                 output=sys.stdout,
             )
+        elif arguments.command == Command.WEARABLE_EVALUATE:
+            timezone = _load_timezone(timezone_name=arguments.timezone)
+            _run_wearable_evaluation(
+                history_path=arguments.history,
+                snapshot_directory=arguments.snapshot_dir,
+                timezone_name=arguments.timezone,
+                mode=arguments.mode,
+                observed_through=(
+                    arguments.as_of_date or datetime.now(tz=timezone).date()
+                ),
+                prediction_hour=arguments.prediction_hour,
+                neighbor_count=arguments.neighbors,
+                output_format=(
+                    OutputFormat.JSON if arguments.json else OutputFormat.HUMAN
+                ),
+                output=sys.stdout,
+            )
     except (EOFError, KeyboardInterrupt):
         print("\nCancelled.", file=sys.stderr)
         return 2
@@ -574,6 +828,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             operation = "set up Oura"
         elif arguments.command == Command.OURA_STATUS:
             operation = "inspect Oura status"
+        elif arguments.command == Command.WEARABLE_EVALUATE:
+            operation = "evaluate wearable models"
         else:
             operation = "run the command"
         print(f"Could not {operation}: {error}", file=sys.stderr)
