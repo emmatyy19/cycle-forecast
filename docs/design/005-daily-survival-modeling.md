@@ -57,3 +57,19 @@ bins and retain predicted mean, observed fraction, and count.
 
 Model selection and calibration never consult the final temporal holdout.
 Personal metrics and fitted artifacts remain local and ignored by Git.
+
+## Local evaluation modes
+
+The local workflow supports two explicit availability interpretations.
+`prospective` constructs at most one row from the first real retrieval cutoff on
+each local date and applies immutable snapshot provenance exactly.
+`exploratory-backfill` assumes the latest normalized historical version was
+available at a configured local hour on its source day. A detailed sleep ending
+after that assumed cutoff is unavailable, and a morning with no remaining
+wearable record is retained through missingness features. Backfill results are
+always labeled optimistic and are not leakage-safe performance estimates.
+
+Temporal partitions reserve whole cycles: all early labeled cycles train model
+coefficients, the penultimate labeled cycle calibrates hazards, and the final
+labeled cycle evaluates every candidate on the same mornings. No cycle may
+contribute rows to more than one partition.

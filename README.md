@@ -130,6 +130,42 @@ Add `--json` to that direct command for machine-readable output. Prediction is
 fully local: the newest CSV record is treated as the current period start, and
 the command neither uploads data nor writes a forecast file.
 
+## Local wearable evaluation
+
+Compare the daily history baseline, wearable nearest-neighbor baseline, and
+calibrated discrete-time survival model using private cycle history and Oura
+snapshots. Run `uv run cycle-forecast` and choose **Evaluate wearable models**
+for the guided workflow. In VS Code, choose **Cycle Forecast: Evaluate
+Wearables** from Run and Debug; it prompts for history, timezone, and evaluation
+mode. The equivalent repeatable command is:
+
+```bash
+uv run cycle-forecast wearable-evaluate \
+  --history data/raw/cycle_history.csv \
+  --timezone America/Los_Angeles
+```
+
+The default `prospective` mode uses only real snapshot retrieval cutoffs. It
+will refuse evaluation until at least three cycles contain enough proven daily
+observations for separate training, calibration, and evaluation partitions.
+
+An exploratory analysis can use the current historical backfill as though each
+record were available at 9:00 AM on its source day:
+
+```bash
+uv run cycle-forecast wearable-evaluate \
+  --history data/raw/cycle_history.csv \
+  --timezone America/Los_Angeles \
+  --mode exploratory-backfill
+```
+
+This mode is intentionally labeled optimistic: historical snapshots cannot
+prove when records originally arrived or whether Oura later corrected them.
+Use `--prediction-hour`, `--as-of-date`, and `--neighbors` to record alternate
+assumptions explicitly. Add `--json` for private local scripting. The command
+prints aggregate counts and metrics but never writes health values or fitted
+artifacts.
+
 ## Test layout
 
 Tests live under `tests/` and mirror the package structure under

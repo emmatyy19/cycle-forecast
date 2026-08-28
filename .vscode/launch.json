@@ -19,6 +19,23 @@
       "justMyCode": true
     },
     {
+      "name": "Cycle Forecast: Evaluate Wearables",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cycle_forecast.cli",
+      "args": [
+        "wearable-evaluate",
+        "--history",
+        "${input:cycleHistoryPath}",
+        "--timezone",
+        "${input:ouraTimezone}",
+        "--mode",
+        "${input:wearableEvaluationMode}"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
       "name": "Oura: Setup",
       "type": "debugpy",
       "request": "launch",
@@ -53,10 +70,23 @@
   ],
   "inputs": [
     {
+      "id": "cycleHistoryPath",
+      "type": "promptString",
+      "description": "Private cycle-history CSV path",
+      "default": "data/raw/cycle_history.csv"
+    },
+    {
       "id": "ouraTimezone",
       "type": "promptString",
       "description": "IANA timezone active during retrieval",
       "default": "America/New_York"
+    },
+    {
+      "id": "wearableEvaluationMode",
+      "type": "pickString",
+      "description": "Wearable evaluation availability mode",
+      "options": ["prospective", "exploratory-backfill"],
+      "default": "exploratory-backfill"
     }
   ]
 }
