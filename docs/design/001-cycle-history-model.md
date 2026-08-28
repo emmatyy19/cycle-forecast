@@ -216,6 +216,21 @@ development comparison, keeps the final holdout reserved, and writes the model
 package and run manifest under `artifacts/`; replacing either requires explicit
 confirmation. It can pass the new package directly into prediction.
 
+The unified daily workflow applies a separate operational-refit rule. It first
+performs the same development-only model selection and metric calculation,
+without consulting final-holdout outcomes. After selection is complete, it may
+refit that fixed Ridge configuration on feature rows from every completed cycle
+and package the result for personal inference. The package retains the holdout
+policy and full-dataset fingerprint as provenance; the run manifest retains the
+pre-refit development metrics. This lets a newly completed cycle affect future
+predictions without retroactively changing the evidence used to choose the
+model.
+
+Daily model refresh compares the packaged dataset fingerprint with current
+validated history. A match reuses the package. A missing or stale package is
+trained fully in a temporary sibling directory before the model and run
+manifest replace their prior local versions.
+
 The `train` and `predict` subcommands accept explicit paths for repeatable use,
 and prediction can emit JSON for local scripts. The newest validated history
 record is the current prediction cutoff; only cycle lengths completed before

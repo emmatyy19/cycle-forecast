@@ -18,6 +18,8 @@ from cycle_forecast.evaluation.wearable import (
 )
 from cycle_forecast.forecasting.daily import DailyForecastEvaluation
 from cycle_forecast.training import (
+    DailyModelRefreshResult,
+    DailyModelRefreshStatus,
     WearableAggregateEntry,
     WearableCalibrationDiagnostic,
     WearableCandidateDiagnostics,
@@ -243,9 +245,20 @@ def test_daily_flow_syncs_checks_history_and_forecasts(
         """Keep the already-current period history unchanged."""
         return "n"
 
+    def reuse_model(**_: object) -> DailyModelRefreshResult:
+        """Keep this CLI test focused on orchestration and rendering."""
+        return DailyModelRefreshResult(
+            status=DailyModelRefreshStatus.CURRENT,
+            model_path=tmp_path / "missing-model.json",
+            run_path=tmp_path / "training-run.json",
+            dataset_fingerprint="sha256:" + "0" * 64,
+            training=None,
+        )
+
     monkeypatch.setattr(cli, "sync_oura", sync)
     monkeypatch.setattr(cli, "resolve_sync_start_date", resolve_start)
     monkeypatch.setattr(cli, "datetime", FixedDateTime)
+    monkeypatch.setattr(cli, "refresh_daily_model_if_needed", reuse_model)
     monkeypatch.setattr("builtins.input", answer_no)
 
     status = main(
@@ -270,6 +283,7 @@ def test_daily_flow_syncs_checks_history_and_forecasts(
     assert received["end_date"] == date(2026, 8, 27)
     assert "One private check-in: sync, record, predict." in captured.out
     assert "Latest recorded start: 2026-08-24" in captured.out
+    assert "Existing Phase A model is current" in captured.out
     assert "CURRENT CYCLE" in captured.out
     assert "Cycle day               4" in captured.out
     assert "SHORT-RANGE PROBABILITIES" in captured.out

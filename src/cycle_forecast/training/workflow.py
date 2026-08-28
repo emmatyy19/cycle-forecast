@@ -5,7 +5,10 @@ from pathlib import Path
 
 from cycle_forecast.data import build_cycle_dataset, load_cycle_history
 from cycle_forecast.evaluation import compare_development_forecasters
-from cycle_forecast.features import build_development_history_features
+from cycle_forecast.features import (
+    build_development_history_features,
+    build_operational_history_features,
+)
 from cycle_forecast.forecasting import split_final_temporal_holdout
 from cycle_forecast.training.delivery import (
     fit_selected_model_package,
@@ -41,6 +44,7 @@ def train_from_local_history(
     output_directory: str | Path,
     code_version: str,
     replace: bool = False,
+    refit_on_all_completed_cycles: bool = False,
 ) -> LocalTrainingResult:
     """Select, fit, and save a model using validated private history.
 
@@ -56,6 +60,9 @@ def train_from_local_history(
         Non-empty code or package revision recorded in both artifacts.
     replace
         Whether existing default artifacts may be replaced.
+    refit_on_all_completed_cycles
+        Whether to refit the selected configuration on all completed cycles
+        after leakage-safe model selection and evaluation.
 
     Returns
     -------
@@ -73,8 +80,10 @@ def train_from_local_history(
 
     Notes
     -----
-    Model selection and fitting use development rows only. The final temporal
-    holdout remains reserved and is not used for selection, metrics, or fitting.
+    Model selection and metrics use development rows only. The final temporal
+    holdout remains untouched during evaluation. Operational callers may then
+    refit the selected configuration on all completed cycles without changing
+    those development metrics.
     """
     destination = Path(output_directory)
     model_path = destination / DEFAULT_MODEL_FILENAME
@@ -104,8 +113,17 @@ def train_from_local_history(
         configuration=configuration,
         code_version=code_version,
     )
+    package_features = (
+        build_operational_history_features(
+            dataset=dataset,
+            configuration=configuration.features,
+            holdout_policy_version=split.policy_version,
+        )
+        if refit_on_all_completed_cycles
+        else features
+    )
     package = fit_selected_model_package(
-        features=features,
+        features=package_features,
         comparison=comparison,
         configuration=configuration,
         code_version=code_version,

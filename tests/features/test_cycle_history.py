@@ -10,6 +10,7 @@ from cycle_forecast.features import (
     CycleHistoryFeatureConfig,
     build_development_history_features,
     build_history_feature_vector,
+    build_operational_history_features,
 )
 from cycle_forecast.forecasting import (
     FINAL_HOLDOUT_POLICY_VERSION,
@@ -129,6 +130,30 @@ def test_training_and_prediction_use_identical_feature_transform() -> None:
     )
 
     assert features.rows[0].vector == prediction_vector
+
+
+def test_operational_refit_features_include_recent_holdout_cycles() -> None:
+    """Refit a selected configuration on all completed cycles after evaluation."""
+    dataset = _dataset(cycle_lengths=tuple(range(20, 50)))
+    configuration = CycleHistoryFeatureConfig(
+        lags=(1,),
+        rolling_windows=(3,),
+        include_expanding_mean=True,
+    )
+
+    features = build_operational_history_features(
+        dataset=dataset,
+        configuration=configuration,
+        holdout_policy_version=FINAL_HOLDOUT_POLICY_VERSION,
+    )
+
+    assert len(features.rows) == len(dataset.rows) - 3
+    assert (
+        features.rows[-1].vector.cycle_start_date == dataset.rows[-1].cycle_start_date
+    )
+    assert (
+        features.rows[-1].target_cycle_length_days == dataset.rows[-1].cycle_length_days
+    )
 
 
 def test_development_features_allow_empty_post_warmup_rows() -> None:
