@@ -17,7 +17,18 @@ from cycle_forecast.evaluation.wearable import (
     DailyModelComparison,
 )
 from cycle_forecast.forecasting.daily import DailyForecastEvaluation
-from cycle_forecast.training import WearableEvaluationMode, WearableEvaluationResult
+from cycle_forecast.training import (
+    WearableAggregateEntry,
+    WearableCalibrationDiagnostic,
+    WearableCandidateDiagnostics,
+    WearableCycleDayDiagnostic,
+    WearableCycleFoldResult,
+    WearableDataDiagnostics,
+    WearableEvaluationDiagnostics,
+    WearableEvaluationMode,
+    WearableEvaluationResult,
+    WearableWalkForwardComparison,
+)
 from tests.test_prediction import write_test_model
 
 
@@ -414,47 +425,121 @@ def test_wearable_evaluate_command_renders_private_safe_summary(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Expose evaluation sufficiency and the optimistic-mode warning."""
+    comparison = DailyModelComparison(
+        prediction_dates=(date(2025, 3, 1),),
+        entries=tuple(
+            DailyCandidateEvaluation(
+                label=label,
+                version=version,
+                evaluation=DailyForecastEvaluation(
+                    count=10,
+                    logarithmic_loss=log_loss,
+                    multiclass_brier_score=brier,
+                    window_brier_scores=window_scores,
+                ),
+                calibration={},
+            )
+            for label, version, log_loss, brier, window_scores in (
+                (
+                    "Empirical cycle hazard",
+                    "history-v1",
+                    0.2,
+                    0.05,
+                    {1: 0.0, 3: 0.01, 7: 0.02, 14: 0.03},
+                ),
+                (
+                    "Wearable nearest neighbors",
+                    "neighbors-v1",
+                    0.9,
+                    0.3,
+                    {1: 0.01, 3: 0.02, 7: 0.05, 14: 0.2},
+                ),
+                (
+                    "Calibrated discrete survival",
+                    "survival-v1",
+                    0.6,
+                    0.2,
+                    {1: 0.0, 3: 0.01, 7: 0.04, 14: 0.1},
+                ),
+            )
+        ),
+    )
+    aggregate_entries = tuple(
+        WearableAggregateEntry(
+            label=entry.label,
+            version=entry.version,
+            mean_logarithmic_loss=entry.evaluation.logarithmic_loss,
+            mean_multiclass_brier_score=entry.evaluation.multiclass_brier_score,
+            mean_window_brier_scores=entry.evaluation.window_brier_scores,
+            log_loss_cycle_wins=int(entry.label == "Empirical cycle hazard"),
+            brier_cycle_wins=int(entry.label == "Empirical cycle hazard"),
+        )
+        for entry in comparison.entries
+    )
+    candidate_diagnostics = tuple(
+        WearableCandidateDiagnostics(
+            label=entry.label,
+            version=entry.version,
+            count=10,
+            mean_actual_outcome_probability=0.2,
+            minimum_actual_outcome_probability=0.01,
+            root_mean_squared_offset_error=2.5,
+            mean_signed_offset_error=-0.5,
+            calibration={
+                window: WearableCalibrationDiagnostic(
+                    count=10,
+                    mean_predicted_probability=0.4,
+                    observed_fraction=0.3,
+                )
+                for window in (1, 3, 7, 14)
+            },
+            cycle_day=(
+                WearableCycleDayDiagnostic(
+                    label="days 1-10",
+                    count=10,
+                    mean_brier_score=entry.evaluation.multiclass_brier_score,
+                ),
+            ),
+        )
+        for entry in comparison.entries
+    )
+    diagnostics = WearableEvaluationDiagnostics(
+        data=WearableDataDiagnostics(
+            missingness_rates={"Readiness score": 0.1},
+            outcome_window_rates={1: 0.1, 3: 0.2, 7: 0.3, 14: 0.4},
+            after_horizon_rate=0.6,
+        ),
+        candidates=candidate_diagnostics,
+    )
     result = WearableEvaluationResult(
-        workflow_version="wearable-evaluation-v1",
+        workflow_version="wearable-evaluation-v2",
         mode=WearableEvaluationMode.EXPLORATORY_BACKFILL,
         optimistic_backfill_assumption=True,
         snapshot_count=3,
         normalized_day_count=60,
         aligned_row_count=50,
         uncensored_row_count=45,
-        training_cycle_count=2,
-        calibration_cycle_count=1,
+        eligible_completed_cycle_count=4,
+        evaluation_fold_count=1,
+        first_fold_training_cycle_count=2,
+        final_fold_training_cycle_count=2,
         evaluation_cycle_count=1,
-        training_row_count=25,
-        calibration_row_count=10,
         evaluation_row_count=10,
-        comparison=DailyModelComparison(
-            prediction_dates=(date(2025, 3, 1),),
-            entries=(
-                DailyCandidateEvaluation(
-                    label="Empirical cycle hazard",
-                    version="history-v1",
-                    evaluation=DailyForecastEvaluation(
-                        count=10,
-                        logarithmic_loss=0.2,
-                        multiclass_brier_score=0.05,
-                        window_brier_scores={1: 0.0, 3: 0.01, 7: 0.02, 14: 0.03},
-                    ),
-                    calibration={},
-                ),
-                DailyCandidateEvaluation(
-                    label="Wearable nearest neighbors",
-                    version="neighbors-v1",
-                    evaluation=DailyForecastEvaluation(
-                        count=10,
-                        logarithmic_loss=0.9,
-                        multiclass_brier_score=0.3,
-                        window_brier_scores={1: 0.01, 3: 0.02, 7: 0.05, 14: 0.2},
-                    ),
-                    calibration={},
+        walk_forward=WearableWalkForwardComparison(
+            folds=(
+                WearableCycleFoldResult(
+                    fold_number=1,
+                    training_cycle_count=2,
+                    training_row_count=25,
+                    calibration_row_count=10,
+                    evaluation_row_count=10,
+                    comparison=comparison,
+                    diagnostics=candidate_diagnostics,
                 ),
             ),
+            entries=aggregate_entries,
         ),
+        diagnostics=diagnostics,
     )
 
     def evaluate(**_: object) -> WearableEvaluationResult:
@@ -482,10 +567,16 @@ def test_wearable_evaluate_command_renders_private_safe_summary(
     captured = capsys.readouterr()
     assert status == 0
     assert "Optimistic historical assumption" in captured.out
-    assert "TEMPORAL SPLIT" in captured.out
+    assert "CYCLE-LEVEL WALK-FORWARD" in captured.out
     assert "EXACT-DATE SCORES" in captured.out
     assert "PLANNING-WINDOW BRIER" in captured.out
     assert "Best log loss: Cycle history" in captured.out
+    assert "PER-CYCLE EXACT-DATE BRIER" in captured.out
+    assert "CYCLE WINS" in captured.out
+    assert "EVALUATED-DATA DIAGNOSTICS" in captured.out
+    assert "MODEL BEHAVIOR" in captured.out
+    assert "PLANNING-WINDOW CALIBRATION" in captured.out
+    assert "CYCLE-DAY BRIER" in captured.out
     assert "Normalized days" in captured.out
     assert "60" in captured.out
     assert str(tmp_path) not in captured.out
@@ -505,20 +596,28 @@ def test_bare_command_guides_wearable_evaluation(
         encoding="utf-8",
     )
     result = WearableEvaluationResult(
-        workflow_version="wearable-evaluation-v1",
+        workflow_version="wearable-evaluation-v2",
         mode=WearableEvaluationMode.EXPLORATORY_BACKFILL,
         optimistic_backfill_assumption=True,
         snapshot_count=3,
         normalized_day_count=60,
         aligned_row_count=50,
         uncensored_row_count=45,
-        training_cycle_count=2,
-        calibration_cycle_count=1,
+        eligible_completed_cycle_count=4,
+        evaluation_fold_count=1,
+        first_fold_training_cycle_count=2,
+        final_fold_training_cycle_count=2,
         evaluation_cycle_count=1,
-        training_row_count=25,
-        calibration_row_count=10,
         evaluation_row_count=10,
-        comparison=DailyModelComparison(prediction_dates=(), entries=()),
+        walk_forward=WearableWalkForwardComparison(folds=(), entries=()),
+        diagnostics=WearableEvaluationDiagnostics(
+            data=WearableDataDiagnostics(
+                missingness_rates={},
+                outcome_window_rates={},
+                after_horizon_rate=0.0,
+            ),
+            candidates=(),
+        ),
     )
     received: dict[str, object] = {}
 

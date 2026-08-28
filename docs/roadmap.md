@@ -94,10 +94,10 @@ of a period starting within a future window.
 - [x] Produce calibrated daily probability distributions
 - [x] Expose prospective and explicitly optimistic backfill evaluation through
   a private local workflow
-- [ ] Expand evaluation to cycle-level walk-forward folds so multiple unseen
+- [x] Expand evaluation to cycle-level walk-forward folds so multiple unseen
   cycles contribute per-cycle and aggregate scores without long cycles receiving
   extra weight
-- [ ] Add private diagnostics for wearable missingness, outcome prevalence,
+- [x] Add private diagnostics for wearable missingness, outcome prevalence,
   actual-outcome probability, predicted versus actual offset, calibration,
   cycle-day performance, and per-cycle rankings
 - [ ] Compare or refine wearable features and model formulations only when the
@@ -107,6 +107,24 @@ of a period starting within a future window.
 
 Phase B begins only after Phase A has a reproducible evaluation pipeline and a
 history-only baseline worth comparing against.
+
+### Personal daily workflow
+
+- [ ] Add an interactive period-start recorder that validates dates, prevents
+  duplicates, and safely updates one private local history file without a
+  monthly spreadsheet workflow
+- [ ] Package a local daily forecaster with its preprocessing, calibration, and
+  version metadata; keep the cycle-history baseline as the default until a
+  wearable candidate demonstrates reliable prospective improvement
+- [ ] Add one interactive daily command that can synchronize any Oura days
+  available since the previous run, load the latest period history, and print
+  today's exact-date and 1-, 3-, 7-, and 14-day probabilities
+- [ ] Make the daily command tolerate skipped days and multi-day synchronization
+  without duplicating records or requiring daily execution
+- [ ] Retrain after a newly recorded period completes the previous cycle, while
+  reusing the current packaged model between period starts
+- [ ] Show wearable forecasts as experimental comparisons until promotion
+  criteria based on prospective cycle-level evaluation are satisfied
 
 ## Later operational milestones
 
