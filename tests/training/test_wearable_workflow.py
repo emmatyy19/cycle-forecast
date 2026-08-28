@@ -121,11 +121,35 @@ def test_exploratory_backfill_compares_all_forecasters_by_complete_cycle(
 
     assert result.optimistic_backfill_assumption
     assert result.snapshot_count == 2
-    assert result.training_cycle_count == 2
-    assert result.calibration_cycle_count == 1
-    assert result.evaluation_cycle_count == 1
+    assert result.eligible_completed_cycle_count == 4
+    assert result.evaluation_fold_count == 2
+    assert result.first_fold_training_cycle_count == 1
+    assert result.final_fold_training_cycle_count == 2
+    assert result.evaluation_cycle_count == 2
     assert result.evaluation_row_count > 0
-    assert len(result.comparison.entries) == 3
+    assert tuple(fold.training_cycle_count for fold in result.walk_forward.folds) == (
+        1,
+        2,
+    )
+    assert len(result.walk_forward.entries) == 3
+    assert len(result.diagnostics.candidates) == 3
+    assert set(result.diagnostics.data.missingness_rates) == {
+        "Readiness score",
+        "Temperature",
+        "Sleep score",
+        "Average HRV",
+        "Total sleep",
+    }
+    assert set(result.diagnostics.data.outcome_window_rates) == {1, 3, 7, 14}
+    assert all(
+        diagnostic.count == result.evaluation_row_count
+        for diagnostic in result.diagnostics.candidates
+    )
+    assert all(
+        diagnostic.minimum_actual_outcome_probability
+        <= diagnostic.mean_actual_outcome_probability
+        for diagnostic in result.diagnostics.candidates
+    )
 
 
 def test_prospective_mode_refuses_backfill_without_three_proven_cycles(
@@ -137,7 +161,9 @@ def test_prospective_mode_refuses_backfill_without_three_proven_cycles(
     _write_history(path=history_path)
     _write_backfill(directory=snapshot_directory)
 
-    with pytest.raises(WearableEvaluationError, match="at least three cycles"):
+    with pytest.raises(
+        WearableEvaluationError, match="at least three completed cycles"
+    ):
         evaluate_local_wearable_models(
             history_path=history_path,
             snapshot_directory=snapshot_directory,

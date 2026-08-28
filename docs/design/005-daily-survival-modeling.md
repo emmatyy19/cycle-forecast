@@ -55,8 +55,8 @@ Brier score, and binary Brier scores for the inclusive 1-, 3-, 7-, and 14-day
 windows. Calibration tables group predicted window probabilities into fixed
 bins and retain predicted mean, observed fraction, and count.
 
-Model selection and calibration never consult the final temporal holdout.
-Personal metrics and fitted artifacts remain local and ignored by Git.
+Model selection and calibration never consult an evaluation cycle. Personal
+metrics and fitted artifacts remain local and ignored by Git.
 
 ## Local evaluation modes
 
@@ -69,7 +69,28 @@ after that assumed cutoff is unavailable, and a morning with no remaining
 wearable record is retained through missingness features. Backfill results are
 always labeled optimistic and are not leakage-safe performance estimates.
 
-Temporal partitions reserve whole cycles: all early labeled cycles train model
-coefficients, the penultimate labeled cycle calibrates hazards, and the final
-labeled cycle evaluates every candidate on the same mornings. No cycle may
-contribute rows to more than one partition.
+Temporal partitions reserve whole completed cycles and form expanding
+walk-forward folds. The earliest fold trains on the first completed cycle,
+calibrates hazards on the second, and evaluates every candidate on the third.
+Each later fold expands the training block by one cycle, uses the immediately
+following cycle for calibration, and evaluates on the next unseen cycle. The
+ongoing cycle is never an evaluation fold, even when some of its older mornings
+already have observable 14-day outcomes.
+
+Within a fold, every candidate is scored on the same mornings. Aggregate scores
+first summarize each evaluation cycle and then average those cycle scores, so a
+long cycle cannot outweigh a short cycle merely because it has more mornings.
+The report also retains each cycle's scores and counts cycle-level wins without
+printing private dates. This contract is versioned as `wearable-evaluation-v2`.
+
+Private-safe diagnostics describe the evaluated mornings without printing dates
+or health measurements. They report wearable-field missingness, observed event
+prevalence for each planning window, and the fraction occurring after the
+14-day horizon. For each candidate they also report the mean and minimum
+probability assigned to the actual outcome, expected-offset bias and RMSE,
+predicted versus observed planning-window frequencies, and exact-date Brier
+scores for cycle days 1-10, 11-20, and 21 or later. The exhaustive later class
+is represented as offset 15 for offset-error summaries. These diagnostic
+aggregates describe mornings, while the headline model scores continue to give
+each evaluation cycle equal weight. Per-cycle tables rank every candidate and
+omit the private cycle dates.

@@ -505,26 +505,29 @@ def _render_wearable_evaluation(
         file=output,
     )
 
-    print("\nTEMPORAL SPLIT", file=output)
-    print(f"  {'Purpose':<16}{'Cycles':>8}{'Mornings':>12}", file=output)
-    print(f"  {'─' * 36}", file=output)
+    print("\nCYCLE-LEVEL WALK-FORWARD", file=output)
     print(
-        f"  {'Train':<16}{result.training_cycle_count:>8}"
-        f"{result.training_row_count:>12}",
+        f"  {'Eligible completed cycles':<30}"
+        f"{result.eligible_completed_cycle_count:>8}",
         file=output,
     )
     print(
-        f"  {'Calibrate':<16}{result.calibration_cycle_count:>8}"
-        f"{result.calibration_row_count:>12}",
+        f"  {'Unseen evaluation folds':<30}{result.evaluation_fold_count:>8}",
         file=output,
     )
     print(
-        f"  {'Evaluate':<16}{result.evaluation_cycle_count:>8}"
-        f"{result.evaluation_row_count:>12}",
+        f"  {'Training cycles by fold':<30}"
+        f"{result.first_fold_training_cycle_count:>3} → "
+        f"{result.final_fold_training_cycle_count}",
+        file=output,
+    )
+    print(f"  {'Calibration cycles per fold':<30}{1:>8}", file=output)
+    print(
+        f"  {'Total evaluated mornings':<30}{result.evaluation_row_count:>8}",
         file=output,
     )
 
-    entries = result.comparison.entries
+    entries = result.walk_forward.entries
     if not entries:
         print("\nNo evaluated candidates.", file=output)
         return
@@ -545,18 +548,21 @@ def _render_wearable_evaluation(
     )
     print(f"  {'Method':<24}{'Log loss':>12}{'Brier':>12}", file=output)
     print(f"  {'─' * 48}", file=output)
-    for entry in result.comparison.entries:
-        metrics = entry.evaluation
+    for entry in entries:
         print(
             f"  {labels[entry.label]:<24}"
-            f"{metrics.logarithmic_loss:>12.3f}"
-            f"{metrics.multiclass_brier_score:>12.3f}",
+            f"{entry.mean_logarithmic_loss:>12.3f}"
+            f"{entry.mean_multiclass_brier_score:>12.3f}",
             file=output,
         )
-    best_log_loss = min(entries, key=lambda entry: entry.evaluation.logarithmic_loss)
-    best_brier = min(entries, key=lambda entry: entry.evaluation.multiclass_brier_score)
+    best_log_loss = min(entries, key=lambda entry: entry.mean_logarithmic_loss)
+    best_brier = min(entries, key=lambda entry: entry.mean_multiclass_brier_score)
     print(f"\n  Best log loss: {labels[best_log_loss.label]}", file=output)
     print(f"  Best Brier:    {labels[best_brier.label]}", file=output)
+    print(
+        "  Values are means of cycle scores; every cycle receives equal weight.",
+        file=output,
+    )
 
     print("\nPLANNING-WINDOW BRIER  (lower is better)", file=output)
     print("  Windows include today. Near-zero values may round to 0.000.", file=output)
@@ -566,16 +572,120 @@ def _render_wearable_evaluation(
     )
     print(f"  {'─' * 64}", file=output)
     for entry in entries:
-        scores = entry.evaluation.window_brier_scores
+        scores = entry.mean_window_brier_scores
         print(
             f"  {labels[entry.label]:<24}"
             f"{scores[1]:>10.3f}{scores[3]:>10.3f}"
             f"{scores[7]:>10.3f}{scores[14]:>10.3f}",
             file=output,
         )
+    print("\nPER-CYCLE EXACT-DATE BRIER", file=output)
     print(
-        "\n  Treat this as preliminary: evaluation mornings come from "
-        f"{result.evaluation_cycle_count} held-out cycle(s).",
+        f"  {'Fold':>4}{'Train':>8}{'Mornings':>11}"
+        f"{'History':>10}{'Neighbor':>10}{'Survival':>10}  Winner",
+        file=output,
+    )
+    print(f"  {'─' * 74}", file=output)
+    for fold in result.walk_forward.folds:
+        fold_entries = fold.comparison.entries
+        scores = tuple(
+            entry.evaluation.multiclass_brier_score for entry in fold_entries
+        )
+        winner = min(
+            fold_entries,
+            key=lambda entry: entry.evaluation.multiclass_brier_score,
+        )
+        ranking = " > ".join(
+            labels[entry.label]
+            for entry in sorted(
+                fold_entries,
+                key=lambda entry: entry.evaluation.multiclass_brier_score,
+            )
+        )
+        print(
+            f"  {fold.fold_number:>4}{fold.training_cycle_count:>8}"
+            f"{fold.evaluation_row_count:>11}"
+            f"{scores[0]:>10.3f}{scores[1]:>10.3f}{scores[2]:>10.3f}  "
+            f"{labels[winner.label]}",
+            file=output,
+        )
+        print(f"       Ranking: {ranking}", file=output)
+    print("\nCYCLE WINS", file=output)
+    print(f"  {'Method':<24}{'Log loss':>12}{'Brier':>12}", file=output)
+    for entry in entries:
+        print(
+            f"  {labels[entry.label]:<24}{entry.log_loss_cycle_wins:>12}"
+            f"{entry.brier_cycle_wins:>12}",
+            file=output,
+        )
+
+    diagnostics = result.diagnostics
+    print("\nEVALUATED-DATA DIAGNOSTICS", file=output)
+    print("  Missing wearable values among evaluated mornings:", file=output)
+    for label, rate in diagnostics.data.missingness_rates.items():
+        print(f"  {label:<24}{rate:>8.1%}", file=output)
+    print("\n  Observed period-start prevalence:", file=output)
+    for window, rate in diagnostics.data.outcome_window_rates.items():
+        print(f"  {'Within ' + str(window) + ' day(s)':<24}{rate:>8.1%}", file=output)
+    print(
+        f"  {'After 14 days':<24}{diagnostics.data.after_horizon_rate:>8.1%}",
+        file=output,
+    )
+
+    print("\nMODEL BEHAVIOR", file=output)
+    print(
+        "  Offset uses the distribution's expected day; after 14 days is "
+        "represented as day 15.",
+        file=output,
+    )
+    print(
+        f"  {'Method':<24}{'Actual p avg':>14}{'Actual p min':>14}"
+        f"{'Offset bias':>14}{'Offset RMSE':>14}",
+        file=output,
+    )
+    print(f"  {'─' * 80}", file=output)
+    for candidate in diagnostics.candidates:
+        print(
+            f"  {labels[candidate.label]:<24}"
+            f"{candidate.mean_actual_outcome_probability:>14.3f}"
+            f"{candidate.minimum_actual_outcome_probability:>14.3f}"
+            f"{candidate.mean_signed_offset_error:>+14.2f}"
+            f"{candidate.root_mean_squared_offset_error:>14.2f}",
+            file=output,
+        )
+
+    print("\nPLANNING-WINDOW CALIBRATION", file=output)
+    print("  Gap = predicted frequency minus observed frequency.", file=output)
+    print(
+        f"  {'Method':<24}{'Window':>8}{'Predicted':>12}{'Observed':>12}{'Gap':>10}",
+        file=output,
+    )
+    for candidate in diagnostics.candidates:
+        for window, diagnostic in candidate.calibration.items():
+            gap = diagnostic.mean_predicted_probability - diagnostic.observed_fraction
+            print(
+                f"  {labels[candidate.label]:<24}{window:>7}d"
+                f"{diagnostic.mean_predicted_probability:>12.1%}"
+                f"{diagnostic.observed_fraction:>12.1%}{gap:>+10.1%}",
+                file=output,
+            )
+
+    print("\nCYCLE-DAY BRIER", file=output)
+    print("  Lower is better; counts are evaluated mornings in each band.", file=output)
+    print(
+        f"  {'Method':<24}{'Cycle days':>14}{'Mornings':>12}{'Brier':>12}",
+        file=output,
+    )
+    for candidate in diagnostics.candidates:
+        for diagnostic in candidate.cycle_day:
+            print(
+                f"  {labels[candidate.label]:<24}{diagnostic.label:>14}"
+                f"{diagnostic.count:>12}{diagnostic.mean_brier_score:>12.3f}",
+                file=output,
+            )
+    print(
+        "\n  Exploratory results remain preliminary until strict prospective "
+        "cycles accumulate.",
         file=output,
     )
 
