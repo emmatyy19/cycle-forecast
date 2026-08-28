@@ -62,7 +62,6 @@ def test_public_data_api_requires_keyword_arguments() -> None:
         ("wrong_column\n2024-01-01\n", "header"),
         ("cycle_start_date,period_length_days\n", "at least one"),
         ("cycle_start_date,period_length_days\n\n", "Missing cycle-history"),
-        ('cycle_start_date,period_length_days\n"",""\n', "Missing cycle-history"),
         (
             "cycle_start_date,period_length_days\n2024-01-01,7\n\n2024-02-01,7\n",
             "Missing cycle-history",
@@ -93,10 +92,6 @@ def test_public_data_api_requires_keyword_arguments() -> None:
         ),
         (
             "cycle_start_date,period_length_days\n,7\n",
-            "Missing cycle-history",
-        ),
-        (
-            "cycle_start_date,period_length_days\n2024-01-01,\n",
             "Missing cycle-history",
         ),
         (
@@ -135,6 +130,34 @@ def test_reject_invalid_cycle_history(
     csv_path.write_text(contents, encoding="utf-8")
 
     with pytest.raises(CycleHistoryValidationError, match=expected_message):
+        load_cycle_history(path=csv_path)
+
+
+def test_allow_unknown_period_length_only_on_newest_record(tmp_path: Path) -> None:
+    """Represent an ongoing newest period without inventing its duration."""
+    csv_path = tmp_path / "cycle_history.csv"
+    csv_path.write_text(
+        "cycle_start_date,period_length_days\n2024-01-01,5\n2024-02-01,\n",
+        encoding="utf-8",
+    )
+
+    records = load_cycle_history(path=csv_path)
+
+    assert records[-1] == CycleHistoryRecord(
+        cycle_start_date=date(2024, 2, 1),
+        period_length_days=None,
+    )
+
+
+def test_reject_unknown_period_length_before_newest_record(tmp_path: Path) -> None:
+    """Require older periods to be completed before another start is added."""
+    csv_path = tmp_path / "cycle_history.csv"
+    csv_path.write_text(
+        "cycle_start_date,period_length_days\n2024-01-01,\n2024-02-01,5\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CycleHistoryValidationError, match="Only the newest"):
         load_cycle_history(path=csv_path)
 
 

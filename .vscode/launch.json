@@ -10,11 +10,39 @@
       "justMyCode": true
     },
     {
+      "name": "Cycle Forecast: Daily",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cycle_forecast.cli",
+      "args": [
+        "daily",
+        "--history",
+        "${input:cycleHistoryPath}",
+        "--timezone",
+        "${input:ouraTimezone}"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
       "name": "Cycle Forecast: Train",
       "type": "debugpy",
       "request": "launch",
       "module": "cycle_forecast.cli",
       "args": ["train"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Cycle Forecast: Record Period",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cycle_forecast.cli",
+      "args": [
+        "period-record",
+        "--history",
+        "${input:cycleHistoryPath}"
+      ],
       "console": "integratedTerminal",
       "justMyCode": true
     },

@@ -13,6 +13,7 @@ from typing import TextIO
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from cycle_forecast import __version__
+from cycle_forecast.data.cycle_history import load_cycle_history
 from cycle_forecast.data.oura_auth import (
     DEFAULT_OURA_TOKEN_PATH,
     OuraAuthorizationError,
@@ -26,7 +27,17 @@ from cycle_forecast.data.oura_sync import (
     resolve_sync_start_date,
     sync_oura,
 )
+from cycle_forecast.data.period_recording import (
+    PeriodRecordingResult,
+    record_period_start,
+)
 from cycle_forecast.prediction import LocalPrediction, predict_from_local_files
+from cycle_forecast.prediction_daily import (
+    DailyPointEstimate,
+    HistoryDailyPrediction,
+    estimate_next_start_from_history,
+    predict_daily_from_history,
+)
 from cycle_forecast.training import (
     LocalTrainingResult,
     WearableEvaluationMode,
@@ -66,6 +77,8 @@ class Command(StrEnum):
     """Identify scriptable CLI subcommands."""
 
     PREDICT = auto()
+    DAILY = auto()
+    PERIOD_RECORD = "period-record"
     TRAIN = auto()
     OURA_AUTHORIZE = "oura-authorize"
     OURA_SYNC = "oura-sync"
@@ -78,6 +91,8 @@ class InteractiveAction(StrEnum):
     """Identify actions in the bare-command menu."""
 
     PREDICT = auto()
+    DAILY = auto()
+    PERIOD_RECORD = "period-record"
     TRAIN = auto()
     WEARABLE_EVALUATE = "wearable-evaluate"
     EXIT = auto()
@@ -94,12 +109,50 @@ def _parser() -> argparse.ArgumentParser:
         "predict",
         help="predict from a packaged model and cycle-history CSV",
     )
+    daily = subparsers.add_parser(
+        "daily",
+        help="sync Oura, check period history, and forecast today",
+    )
+    daily.add_argument("--history", type=Path)
+    daily.add_argument(
+        "--model",
+        type=Path,
+        default=DEFAULT_ARTIFACT_DIRECTORY / "selected-model.json",
+        help="preferred Phase A model (falls back to a naive history median)",
+    )
+    daily.add_argument("--timezone", help="active IANA timezone")
+    daily.add_argument("--start-date", type=date.fromisoformat)
+    daily.add_argument("--token-path", type=Path, default=DEFAULT_OURA_TOKEN_PATH)
+    daily.add_argument(
+        "--snapshot-dir", type=Path, default=DEFAULT_OURA_SNAPSHOT_DIRECTORY
+    )
     predict.add_argument("--model", type=Path, help="model package JSON path")
     predict.add_argument("--history", type=Path, help="cycle-history CSV path")
     predict.add_argument(
         "--json",
         action="store_true",
         help="print machine-readable JSON instead of a friendly summary",
+    )
+    period_record = subparsers.add_parser(
+        "period-record",
+        help="safely add a period start to private local history",
+    )
+    period_record.add_argument("--history", type=Path)
+    period_record.add_argument("--date", type=date.fromisoformat)
+    period_record.add_argument(
+        "--period-length",
+        type=int,
+        help="known duration for this period; omit while it is ongoing",
+    )
+    period_record.add_argument(
+        "--previous-period-length",
+        type=int,
+        help="complete a prior pending period while adding a new start",
+    )
+    period_record.add_argument(
+        "--yes",
+        action="store_true",
+        help="save without an interactive confirmation",
     )
     train = subparsers.add_parser(
         "train",
@@ -336,22 +389,26 @@ def _choose_action(
     print("Private, local cycle planning", file=output)
     print("Your health data never leaves this computer.\n", file=output)
     print("What would you like to do?", file=output)
-    print("  [1] Make a prediction", file=output)
-    print("  [2] Train or update a model", file=output)
-    print("  [3] Evaluate wearable models", file=output)
-    print("  [4] Exit", file=output)
+    print("  [1] Daily check-in", file=output)
+    print("  [2] Record a period start", file=output)
+    print("  [3] Make a packaged-model prediction", file=output)
+    print("  [4] Train or update a model", file=output)
+    print("  [5] Evaluate wearable models", file=output)
+    print("  [6] Exit", file=output)
     choices = {
-        "1": InteractiveAction.PREDICT,
-        "2": InteractiveAction.TRAIN,
-        "3": InteractiveAction.WEARABLE_EVALUATE,
-        "4": InteractiveAction.EXIT,
+        "1": InteractiveAction.DAILY,
+        "2": InteractiveAction.PERIOD_RECORD,
+        "3": InteractiveAction.PREDICT,
+        "4": InteractiveAction.TRAIN,
+        "5": InteractiveAction.WEARABLE_EVALUATE,
+        "6": InteractiveAction.EXIT,
     }
     while True:
         answer = input_fn("\nSelect: ").strip()
         action = choices.get(answer)
         if action is not None:
             return action
-        print("Please choose 1, 2, 3, or 4.", file=output)
+        print("Please choose 1, 2, 3, 4, 5, or 6.", file=output)
 
 
 def _choose_wearable_mode(
@@ -389,6 +446,296 @@ def _choose_timezone(*, input_fn: Callable[[str], str], output: TextIO) -> str:
             print(str(error), file=output)
             continue
         return timezone_name
+
+
+def _prompt_date(
+    *, label: str, default: date, input_fn: Callable[[str], str], output: TextIO
+) -> date:
+    """Prompt until a calendar date is entered in ISO format."""
+    while True:
+        raw_value = input_fn(f"{label} [{default.isoformat()}]: ").strip()
+        if not raw_value:
+            return default
+        try:
+            return date.fromisoformat(raw_value)
+        except ValueError:
+            print("Please enter a date as YYYY-MM-DD.", file=output)
+
+
+def _prompt_positive_int(
+    *, label: str, input_fn: Callable[[str], str], output: TextIO
+) -> int:
+    """Prompt until a positive whole number is entered."""
+    while True:
+        raw_value = input_fn(f"{label}: ").strip()
+        if raw_value.isdecimal() and int(raw_value) > 0:
+            return int(raw_value)
+        print("Please enter a positive whole number.", file=output)
+
+
+def _render_period_recording_result(
+    *, result: PeriodRecordingResult, output: TextIO
+) -> None:
+    """Confirm a private history update in friendly language."""
+    print("\n✓ PERIOD HISTORY UPDATED", file=output)
+    print(RULE, file=output)
+    print(f"Period start       {result.cycle_start_date.isoformat()}", file=output)
+    if result.completed_previous_cycle_days is not None:
+        print(
+            f"Completed cycle    {result.completed_previous_cycle_days} days",
+            file=output,
+        )
+    if result.period_length_days is None:
+        print("Period duration    ongoing · add it later", file=output)
+    else:
+        print(f"Period duration    {result.period_length_days} days", file=output)
+    print(f"History records    {result.record_count}", file=output)
+    print(f"Saved privately    {result.history_path}", file=output)
+
+
+def _run_period_recording(
+    *,
+    history_path: Path | None,
+    cycle_start_date: date | None,
+    period_length_days: int | None,
+    previous_period_length_days: int | None,
+    recorded_on: date,
+    assume_yes: bool,
+    input_fn: Callable[[str], str],
+    output: TextIO,
+) -> PeriodRecordingResult | None:
+    """Guide one safe new-start or period-duration history update."""
+    print("\nRECORD A PERIOD", file=output)
+    print(RULE, file=output)
+    print("This stays in one private file on this computer.", file=output)
+    resolved_history = history_path or _choose_path(
+        label="CYCLE HISTORY",
+        candidates=_discover_files(
+            directories=DEFAULT_HISTORY_DIRECTORIES,
+            pattern="*.csv",
+        ),
+        input_fn=input_fn,
+        output=output,
+    )
+    resolved_date = cycle_start_date or _prompt_date(
+        label="First day of this period",
+        default=recorded_on,
+        input_fn=input_fn,
+        output=output,
+    )
+
+    existing = (
+        load_cycle_history(path=resolved_history) if resolved_history.exists() else ()
+    )
+    resolved_period_length = period_length_days
+    resolved_previous_length = previous_period_length_days
+    if existing:
+        latest = existing[-1]
+        if (
+            resolved_date == latest.cycle_start_date
+            and latest.period_length_days is None
+            and resolved_period_length is None
+            and not assume_yes
+        ):
+            resolved_period_length = _prompt_positive_int(
+                label="How many days did this period last?",
+                input_fn=input_fn,
+                output=output,
+            )
+        elif (
+            resolved_date > latest.cycle_start_date
+            and latest.period_length_days is None
+            and resolved_previous_length is None
+            and not assume_yes
+        ):
+            resolved_previous_length = _prompt_positive_int(
+                label="How many days did your previous period last?",
+                input_fn=input_fn,
+                output=output,
+            )
+
+    print("\nPLEASE CONFIRM", file=output)
+    print(f"  History file       {resolved_history}", file=output)
+    print(f"  Period start       {resolved_date.isoformat()}", file=output)
+    if resolved_previous_length is not None:
+        print(f"  Previous duration  {resolved_previous_length} days", file=output)
+    if resolved_period_length is None:
+        print("  Current duration   ongoing / not known yet", file=output)
+    else:
+        print(f"  Current duration   {resolved_period_length} days", file=output)
+    if not assume_yes:
+        answer = input_fn("Save this? [Y/n] ").strip().lower()
+        if answer in {"n", "no"}:
+            print("Nothing was changed.", file=output)
+            return None
+
+    result = record_period_start(
+        history_path=resolved_history,
+        cycle_start_date=resolved_date,
+        recorded_on=recorded_on,
+        period_length_days=resolved_period_length,
+        previous_period_length_days=resolved_previous_length,
+    )
+    _render_period_recording_result(result=result, output=output)
+    return result
+
+
+def _render_daily_prediction(
+    *,
+    prediction: HistoryDailyPrediction,
+    point_estimate: DailyPointEstimate,
+    output: TextIO,
+) -> None:
+    """Print today's baseline-first probability forecast for planning."""
+    distribution = prediction.distribution
+    daily_probabilities = distribution.daily_probabilities
+    most_likely_offset = max(
+        range(len(daily_probabilities)),
+        key=daily_probabilities.__getitem__,
+    )
+    most_likely_daily_probability = daily_probabilities[most_likely_offset]
+    print("\nTODAY'S FORECAST", file=output)
+    print(RULE, file=output)
+    friendly_start = prediction.current_cycle_start_date.strftime("%B %d, %Y").replace(
+        " 0", " "
+    )
+    print("\nCURRENT CYCLE", file=output)
+    print(f"  {'Period start':<24}{friendly_start}", file=output)
+    print(f"  {'Cycle day':<24}{prediction.cycle_day}", file=output)
+
+    print("\nSHORT-RANGE PROBABILITIES", file=output)
+    print(f"  {'Window':<24}{'Chance':>8}", file=output)
+    print(f"  {'─' * 32}", file=output)
+    probability_rows = (
+        ("Today", daily_probabilities[0]),
+        ("Within 3 days", distribution.probability_within(days=3)),
+        ("Within 7 days", distribution.probability_within(days=7)),
+        ("Within 14 days", distribution.probability_within(days=14)),
+    )
+    for label, probability in probability_rows:
+        print(f"  {label:<24}{probability:>8.1%}", file=output)
+    if distribution.after_horizon_probability > most_likely_daily_probability:
+        horizon_end = prediction.prediction_date + timedelta(days=14)
+        likely_outcome = f"After {horizon_end.strftime('%B %d, %Y')}"
+    else:
+        likely_date = prediction.prediction_date + timedelta(days=most_likely_offset)
+        likely_outcome = likely_date.strftime("%A, %B %d, %Y").replace(" 0", " ")
+    print("\n15-DAY OUTLOOK", file=output)
+    print(f"  {'Most likely result':<24}{likely_outcome}", file=output)
+    friendly_estimate = point_estimate.predicted_next_cycle_start_date.strftime(
+        "%A, %B %d, %Y"
+    ).replace(" 0", " ")
+    print("\nNEXT PERIOD ESTIMATE", file=output)
+    print(f"  {'Estimated start':<24}{friendly_estimate}", file=output)
+    print(
+        f"  {'Estimated cycle length':<24}"
+        f"{point_estimate.predicted_cycle_length_days:.1f} days",
+        file=output,
+    )
+    print(f"  {'Estimate source':<24}{point_estimate.source_label}", file=output)
+    print(f"  {'Interpretation':<24}Single planning guess", file=output)
+
+    print("\nMODEL STATUS", file=output)
+    print(
+        f"  {'Probability model':<24}Cycle-history baseline",
+        file=output,
+    )
+    print(f"  {'Model version':<24}{prediction.model_version}", file=output)
+    print(
+        f"  {'Wearable models':<24}Experimental · not used in this forecast",
+        file=output,
+    )
+    print("\nFor personal planning only; not medical advice.", file=output)
+
+
+def _run_daily(
+    *,
+    history_path: Path | None,
+    model_path: Path,
+    timezone_name: str | None,
+    explicit_start_date: date | None,
+    token_path: Path,
+    snapshot_directory: Path,
+    today: date | None,
+    input_fn: Callable[[str], str],
+    output: TextIO,
+) -> HistoryDailyPrediction:
+    """Synchronize Oura, update period history if needed, and forecast today."""
+    print("\nDAILY CYCLE FORECAST", file=output)
+    print(WEARABLE_RULE, file=output)
+    print("One private check-in: sync, record, predict.", file=output)
+    resolved_history = history_path or _choose_path(
+        label="CYCLE HISTORY",
+        candidates=_discover_files(
+            directories=DEFAULT_HISTORY_DIRECTORIES,
+            pattern="*.csv",
+        ),
+        input_fn=input_fn,
+        output=output,
+    )
+    resolved_timezone = timezone_name or _choose_timezone(
+        input_fn=input_fn,
+        output=output,
+    )
+    timezone = _load_timezone(timezone_name=resolved_timezone)
+    resolved_today = today or datetime.now(tz=timezone).date()
+    sync_start = resolve_sync_start_date(
+        explicit_start_date=explicit_start_date,
+        snapshot_directory=snapshot_directory,
+    )
+    print(
+        f"\n1. Syncing Oura: {sync_start} through {resolved_today}…",
+        file=output,
+    )
+    sync_results = sync_oura(
+        token_path=token_path,
+        snapshot_directory=snapshot_directory,
+        start_date=sync_start,
+        end_date=resolved_today,
+        timezone_name=resolved_timezone,
+        save=True,
+    )
+    print(
+        f"   ✓ Saved {sum(result.document_count for result in sync_results)} "
+        "validated records across Oura routes.",
+        file=output,
+    )
+
+    records = load_cycle_history(path=resolved_history)
+    latest_start = records[-1].cycle_start_date
+    print("\n2. Period history", file=output)
+    print(f"   Latest recorded start: {latest_start.isoformat()}", file=output)
+    answer = input_fn("   Did a newer period start? [y/N] ").strip().lower()
+    if answer in {"y", "yes"}:
+        _run_period_recording(
+            history_path=resolved_history,
+            cycle_start_date=None,
+            period_length_days=None,
+            previous_period_length_days=None,
+            recorded_on=resolved_today,
+            assume_yes=False,
+            input_fn=input_fn,
+            output=output,
+        )
+    else:
+        print("   ✓ Period history is current.", file=output)
+
+    print("\n3. Producing today's forecast…", file=output)
+    prediction = predict_daily_from_history(
+        history_path=resolved_history,
+        prediction_date=resolved_today,
+        timezone_name=resolved_timezone,
+    )
+    point_estimate = estimate_next_start_from_history(
+        history_path=resolved_history,
+        model_path=model_path,
+    )
+    _render_daily_prediction(
+        prediction=prediction,
+        point_estimate=point_estimate,
+        output=output,
+    )
+    return prediction
 
 
 def _render_human(*, prediction: LocalPrediction, output: TextIO) -> None:
@@ -756,6 +1103,31 @@ def _run_interactive(*, input_fn: Callable[[str], str], output: TextIO) -> None:
     if action is InteractiveAction.EXIT:
         print("Goodbye.", file=output)
         return
+    if action is InteractiveAction.DAILY:
+        _run_daily(
+            history_path=None,
+            model_path=DEFAULT_ARTIFACT_DIRECTORY / "selected-model.json",
+            timezone_name=None,
+            explicit_start_date=None,
+            token_path=DEFAULT_OURA_TOKEN_PATH,
+            snapshot_directory=DEFAULT_OURA_SNAPSHOT_DIRECTORY,
+            today=None,
+            input_fn=input_fn,
+            output=output,
+        )
+        return
+    if action is InteractiveAction.PERIOD_RECORD:
+        _run_period_recording(
+            history_path=None,
+            cycle_start_date=None,
+            period_length_days=None,
+            previous_period_length_days=None,
+            recorded_on=date.today(),
+            assume_yes=False,
+            input_fn=input_fn,
+            output=output,
+        )
+        return
     if action is InteractiveAction.PREDICT:
         _run_prediction(
             model_path=None,
@@ -854,12 +1226,35 @@ def main(argv: Sequence[str] | None = None) -> int:
                 input_fn=input,
                 output=sys.stdout,
             )
+        elif arguments.command == Command.DAILY:
+            _run_daily(
+                history_path=arguments.history,
+                model_path=arguments.model,
+                timezone_name=arguments.timezone,
+                explicit_start_date=arguments.start_date,
+                token_path=arguments.token_path,
+                snapshot_directory=arguments.snapshot_dir,
+                today=None,
+                input_fn=input,
+                output=sys.stdout,
+            )
         elif arguments.command == Command.TRAIN:
             _run_training(
                 history_path=arguments.history,
                 configuration_path=arguments.config,
                 output_directory=arguments.output_dir,
                 replace=arguments.replace,
+                input_fn=input,
+                output=sys.stdout,
+            )
+        elif arguments.command == Command.PERIOD_RECORD:
+            _run_period_recording(
+                history_path=arguments.history,
+                cycle_start_date=arguments.date,
+                period_length_days=arguments.period_length,
+                previous_period_length_days=arguments.previous_period_length,
+                recorded_on=date.today(),
+                assume_yes=arguments.yes,
                 input_fn=input,
                 output=sys.stdout,
             )
@@ -928,6 +1323,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, ValueError, OuraApiError, OuraAuthorizationError) as error:
         if arguments.command == Command.TRAIN:
             operation = "train a model"
+        elif arguments.command == Command.DAILY:
+            operation = "run the daily forecast"
+        elif arguments.command == Command.PERIOD_RECORD:
+            operation = "record a period"
         elif arguments.command == Command.PREDICT:
             operation = "make a prediction"
         elif arguments.command == Command.OURA_AUTHORIZE:

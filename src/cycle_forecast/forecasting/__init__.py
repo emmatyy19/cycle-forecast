@@ -47,6 +47,7 @@ from cycle_forecast.forecasting.wearable_baselines import (
     EMPIRICAL_HAZARD_BASELINE_VERSION,
     WEARABLE_NEIGHBOR_BASELINE_VERSION,
     forecast_with_empirical_cycle_hazard,
+    forecast_with_empirical_cycle_hazard_context,
     forecast_with_wearable_neighbors,
 )
 
@@ -80,6 +81,7 @@ __all__ = [
     "evaluate_forecasts",
     "evaluate_walk_forward",
     "forecast_with_empirical_cycle_hazard",
+    "forecast_with_empirical_cycle_hazard_context",
     "forecast_with_expanding_mean",
     "forecast_with_previous_cycle",
     "forecast_with_rolling_mean",
