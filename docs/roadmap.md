@@ -123,6 +123,8 @@ history-only baseline worth comparing against.
   without duplicating records or requiring daily execution
 - [x] Retrain after a newly recorded period completes the previous cycle, while
   reusing the current packaged model between period starts
+- [x] Journal the first forecast from each daily run privately and score resolved
+  forecasts automatically with equal weight for every completed cycle
 - [ ] Show wearable forecasts as experimental comparisons until promotion
   criteria based on prospective cycle-level evaluation are satisfied
 
@@ -133,7 +135,7 @@ history-only baseline worth comparing against.
   baseline
 - [ ] Add a prediction service when a stable prediction contract exists
 - [ ] Containerize the service when deployment requires it
-- [ ] Define monitoring signals and delayed-label evaluation
+- [x] Define monitoring signals and delayed-label evaluation
 - [ ] Add scheduled retraining only after a justified retraining policy exists
 
 Tools such as MLflow, Docker, FastAPI, and a model registry are intentionally

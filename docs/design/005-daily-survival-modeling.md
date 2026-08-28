@@ -119,3 +119,22 @@ uses the median completed cycle length, rounded to the nearest operational day
 with halves rounded upward. This naive or model-based date does not replace the
 probability distribution and is explicitly described as a planning guess rather
 than a confidence window.
+
+## Prospective forecast journal
+
+Every successful daily workflow appends at most one immutable forecast per
+local prediction date to an owner-private, git-ignored JSON Lines journal. The
+first forecast is preserved on same-day reruns. Each versioned entry contains
+the exhaustive history-baseline distribution, Phase A point estimate, cycle
+context, model and dataset provenance, prediction cutoff, and the date through
+which Oura synchronization was requested. It contains no raw wearable values.
+
+Journal entries remain unresolved until validated cycle history contains the
+following period start for their recorded current cycle. Delayed scoring uses
+the same exhaustive multiclass log loss and Brier definitions as development
+evaluation. Forecasts are summarized within each completed cycle first and
+then averaged across cycles, preventing frequently journaled or longer cycles
+from receiving extra weight. The point estimate is evaluated by absolute date
+error under the same equal-cycle rule. Predictions accidentally made after a
+later-reported period start are excluded because their event offset would be
+negative.

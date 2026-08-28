@@ -31,6 +31,14 @@ from cycle_forecast.data.period_recording import (
     PeriodRecordingResult,
     record_period_start,
 )
+from cycle_forecast.evaluation.prospective_journal import (
+    DEFAULT_PROSPECTIVE_JOURNAL_PATH,
+    ProspectivePerformanceSummary,
+    append_prospective_forecast,
+    build_prospective_entry,
+    load_prospective_journal,
+    summarize_prospective_performance,
+)
 from cycle_forecast.prediction import LocalPrediction, predict_from_local_files
 from cycle_forecast.prediction_daily import (
     DailyPointEstimate,
@@ -134,6 +142,12 @@ def _parser() -> argparse.ArgumentParser:
     daily.add_argument("--token-path", type=Path, default=DEFAULT_OURA_TOKEN_PATH)
     daily.add_argument(
         "--snapshot-dir", type=Path, default=DEFAULT_OURA_SNAPSHOT_DIRECTORY
+    )
+    daily.add_argument(
+        "--journal",
+        type=Path,
+        default=DEFAULT_PROSPECTIVE_JOURNAL_PATH,
+        help="private prospective forecast journal",
     )
     predict.add_argument("--model", type=Path, help="model package JSON path")
     predict.add_argument("--history", type=Path, help="cycle-history CSV path")
@@ -654,7 +668,48 @@ def _render_daily_prediction(
         f"  {'Wearable models':<24}Experimental · not used in this forecast",
         file=output,
     )
-    print("\nFor personal planning only; not medical advice.", file=output)
+
+
+def _render_prospective_performance(
+    *, summary: ProspectivePerformanceSummary, appended: bool, output: TextIO
+) -> None:
+    """Render delayed performance without printing private forecast dates."""
+    print("\nPROSPECTIVE JOURNAL", file=output)
+    saved_status = "Saved" if appended else "Already saved · original kept"
+    today_label = "Today's forecast"
+    print(f"  {today_label:<24}{saved_status}", file=output)
+    print(f"  {'Journal forecasts':<24}{summary.journal_forecast_count}", file=output)
+    print(f"  {'Resolved forecasts':<24}{summary.resolved_forecast_count}", file=output)
+    print(f"  {'Completed cycles':<24}{summary.completed_cycle_count}", file=output)
+    if summary.completed_cycle_count == 0:
+        print(
+            "  Performance             Waiting for a future period start", file=output
+        )
+        return
+    assert summary.mean_cycle_logarithmic_loss is not None
+    assert summary.mean_cycle_brier_score is not None
+    assert summary.mean_cycle_point_absolute_error_days is not None
+    print(
+        f"  {'History log loss':<24}{summary.mean_cycle_logarithmic_loss:.3f}",
+        file=output,
+    )
+    print(
+        f"  {'History Brier':<24}{summary.mean_cycle_brier_score:.3f}",
+        file=output,
+    )
+    print(
+        f"  {'Point-estimate MAE':<24}"
+        f"{summary.mean_cycle_point_absolute_error_days:.2f} days",
+        file=output,
+    )
+    window_scores = summary.mean_cycle_window_brier_scores
+    print(
+        f"  {'Window Brier 1/3/7/14d':<24}"
+        f"{window_scores[1]:.3f} / {window_scores[3]:.3f} / "
+        f"{window_scores[7]:.3f} / {window_scores[14]:.3f}",
+        file=output,
+    )
+    print("  Scores give every completed cycle equal weight.", file=output)
 
 
 def _render_daily_model_refresh(
@@ -689,6 +744,7 @@ def _run_daily(
     explicit_start_date: date | None,
     token_path: Path,
     snapshot_directory: Path,
+    journal_path: Path,
     today: date | None,
     input_fn: Callable[[str], str],
     output: TextIO,
@@ -776,6 +832,23 @@ def _run_daily(
         point_estimate=point_estimate,
         output=output,
     )
+    entry = build_prospective_entry(
+        prediction=prediction,
+        point_estimate=point_estimate,
+        model_dataset_fingerprint=refresh.dataset_fingerprint,
+        oura_synced_through=resolved_today,
+    )
+    appended = append_prospective_forecast(path=journal_path, entry=entry)
+    summary = summarize_prospective_performance(
+        entries=load_prospective_journal(path=journal_path),
+        history=load_cycle_history(path=resolved_history),
+    )
+    _render_prospective_performance(
+        summary=summary,
+        appended=appended,
+        output=output,
+    )
+    print("\nFor personal planning only; not medical advice.", file=output)
     return prediction
 
 
@@ -1153,6 +1226,7 @@ def _run_interactive(*, input_fn: Callable[[str], str], output: TextIO) -> None:
             explicit_start_date=None,
             token_path=DEFAULT_OURA_TOKEN_PATH,
             snapshot_directory=DEFAULT_OURA_SNAPSHOT_DIRECTORY,
+            journal_path=DEFAULT_PROSPECTIVE_JOURNAL_PATH,
             today=None,
             input_fn=input_fn,
             output=output,
@@ -1277,6 +1351,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 explicit_start_date=arguments.start_date,
                 token_path=arguments.token_path,
                 snapshot_directory=arguments.snapshot_dir,
+                journal_path=arguments.journal,
                 today=None,
                 input_fn=input,
                 output=sys.stdout,
