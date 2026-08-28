@@ -25,11 +25,12 @@ class CycleHistoryRecord:
     cycle_start_date
         First calendar day of the period.
     period_length_days
-        Number of days in the period.
+        Number of days in the period, or ``None`` while the newest period is
+        still ongoing and its duration is not yet known.
     """
 
     cycle_start_date: date
-    period_length_days: int
+    period_length_days: int | None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -114,9 +115,8 @@ def fingerprint_cycle_dataset(
     digest.update(f"transformation_version={transformation_version}\n".encode())
     digest.update(b"cycle_start_date,period_length_days\n")
     for record in records:
-        canonical_record = (
-            f"{record.cycle_start_date.isoformat()},{record.period_length_days}\n"
-        )
+        period_length = record.period_length_days or ""
+        canonical_record = f"{record.cycle_start_date.isoformat()},{period_length}\n"
         digest.update(canonical_record.encode())
     return f"sha256:{digest.hexdigest()}"
 
@@ -227,7 +227,7 @@ def load_cycle_history(
                 raise CycleHistoryValidationError(message)
 
             raw_date, raw_period_length = row
-            if not raw_date.strip() or not raw_period_length.strip():
+            if not raw_date.strip():
                 message = f"Missing cycle-history value on line {line_number}"
                 raise CycleHistoryValidationError(message)
 
@@ -246,20 +246,22 @@ def load_cycle_history(
                 )
                 raise CycleHistoryValidationError(message)
 
-            try:
-                period_length = int(raw_period_length)
-            except ValueError as error:
-                message = (
-                    f"Invalid period_length_days on line {line_number}: "
-                    f"{raw_period_length!r}; expected a positive whole number"
-                )
-                raise CycleHistoryValidationError(message) from error
-            if str(period_length) != raw_period_length or period_length < 1:
-                message = (
-                    f"Invalid period_length_days on line {line_number}: "
-                    f"{raw_period_length!r}; expected a positive whole number"
-                )
-                raise CycleHistoryValidationError(message)
+            period_length: int | None = None
+            if raw_period_length:
+                try:
+                    period_length = int(raw_period_length)
+                except ValueError as error:
+                    message = (
+                        f"Invalid period_length_days on line {line_number}: "
+                        f"{raw_period_length!r}; expected a positive whole number"
+                    )
+                    raise CycleHistoryValidationError(message) from error
+                if str(period_length) != raw_period_length or period_length < 1:
+                    message = (
+                        f"Invalid period_length_days on line {line_number}: "
+                        f"{raw_period_length!r}; expected a positive whole number"
+                    )
+                    raise CycleHistoryValidationError(message)
 
             if records:
                 previous_start = records[-1].cycle_start_date
@@ -285,6 +287,12 @@ def load_cycle_history(
                     raise CycleHistoryValidationError(message)
 
                 previous_period_length = records[-1].period_length_days
+                if previous_period_length is None:
+                    message = (
+                        "Only the newest cycle-history record may have an unknown "
+                        f"period length; line {line_number - 1} is blank"
+                    )
+                    raise CycleHistoryValidationError(message)
                 if previous_period_length > gap_days:
                     message = (
                         f"period_length_days on line {line_number - 1} is "
@@ -302,6 +310,12 @@ def load_cycle_history(
 
     if not records:
         message = "CSV must contain at least one cycle-history record"
+        raise CycleHistoryValidationError(message)
+
+    if any(record.period_length_days is None for record in records[:-1]):
+        message = (
+            "Only the newest cycle-history record may have an unknown period length"
+        )
         raise CycleHistoryValidationError(message)
 
     return tuple(records)

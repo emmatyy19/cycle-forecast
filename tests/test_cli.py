@@ -79,7 +79,7 @@ def test_bare_command_lists_and_selects_discovered_files(
         '{"schema_version": "not-a-model"}\n',
         encoding="utf-8",
     )
-    answers = iter(("1", "1", "1"))
+    answers = iter(("3", "1", "1"))
 
     def answer_prompt(_: str) -> str:
         """Return the next simulated numbered selection."""
@@ -117,7 +117,7 @@ def test_bare_command_can_train_a_discovered_history(
         Path("configs/phase_a.toml").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
-    answers = iter(("2", "", "n"))
+    answers = iter(("4", "", "n"))
 
     def answer_prompt(_: str) -> str:
         """Return the next simulated training selection."""
@@ -134,6 +134,149 @@ def test_bare_command_can_train_a_discovered_history(
     assert (tmp_path / "artifacts/training-run.json").is_file()
     assert "✓ MODEL READY" in captured.out
     assert "Development MAE" in captured.out
+
+
+def test_period_record_command_appends_ongoing_period_without_prompt(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Support a repeatable explicit command while leaving duration unknown."""
+    history_path = tmp_path / "history.csv"
+    history_path.write_text(
+        "cycle_start_date,period_length_days\n2025-01-01,5\n",
+        encoding="utf-8",
+    )
+
+    status = main(
+        (
+            "period-record",
+            "--history",
+            str(history_path),
+            "--date",
+            "2025-02-01",
+            "--yes",
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert status == 0
+    assert "✓ PERIOD HISTORY UPDATED" in captured.out
+    assert "Completed cycle    31 days" in captured.out
+    assert "ongoing · add it later" in captured.out
+    assert history_path.read_text(encoding="utf-8").endswith("2025-02-01,\n")
+
+
+def test_bare_command_completes_pending_period_intuitively(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Guide duration completion through the main menu and one confirmation."""
+    history_directory = tmp_path / "data/raw"
+    history_directory.mkdir(parents=True)
+    history_path = history_directory / "history.csv"
+    history_path.write_text(
+        "cycle_start_date,period_length_days\n2025-01-01,\n",
+        encoding="utf-8",
+    )
+    answers = iter(("2", "", "2025-01-01", "5", ""))
+
+    def answer_prompt(_: str) -> str:
+        """Return the next guided recording selection."""
+        return next(answers)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("builtins.input", answer_prompt)
+
+    status = main(())
+
+    captured = capsys.readouterr()
+    assert status == 0
+    assert "[2] Record a period start" in captured.out
+    assert "How many days did this period last?" not in captured.out
+    assert "Current duration   5 days" in captured.out
+    assert history_path.read_text(encoding="utf-8").endswith("2025-01-01,5\n")
+
+
+def test_daily_flow_syncs_checks_history_and_forecasts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Complete the primary workflow through one entry point."""
+    history_path = tmp_path / "history.csv"
+    history_path.write_text(
+        "cycle_start_date,period_length_days\n"
+        "2026-06-28,5\n"
+        "2026-07-27,5\n"
+        "2026-08-24,\n",
+        encoding="utf-8",
+    )
+    received: dict[str, object] = {}
+
+    def sync(**arguments: object) -> tuple[OuraRouteSyncResult, ...]:
+        """Capture the incremental range and return privacy-safe counts."""
+        received.update(arguments)
+        return tuple(
+            OuraRouteSyncResult(
+                route=route,
+                page_count=1,
+                document_count=2,
+                snapshot=None,
+            )
+            for route in OuraRoute
+        )
+
+    def resolve_start(**_: object) -> date:
+        """Return a deterministic overlapping incremental start."""
+        return date(2026, 8, 26)
+
+    class FixedDateTime(datetime):
+        """Provide a deterministic local date to the command."""
+
+        @classmethod
+        def now(cls, tz: tzinfo | None = None) -> datetime:
+            """Return the invented current instant in the requested timezone."""
+            return cls(2026, 8, 27, 9, tzinfo=tz)
+
+    def answer_no(_: str) -> str:
+        """Keep the already-current period history unchanged."""
+        return "n"
+
+    monkeypatch.setattr(cli, "sync_oura", sync)
+    monkeypatch.setattr(cli, "resolve_sync_start_date", resolve_start)
+    monkeypatch.setattr(cli, "datetime", FixedDateTime)
+    monkeypatch.setattr("builtins.input", answer_no)
+
+    status = main(
+        (
+            "daily",
+            "--history",
+            str(history_path),
+            "--timezone",
+            "America/Los_Angeles",
+            "--model",
+            str(tmp_path / "missing-model.json"),
+            "--token-path",
+            str(tmp_path / "token.json"),
+            "--snapshot-dir",
+            str(tmp_path / "snapshots"),
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert status == 0
+    assert received["start_date"] == date(2026, 8, 26)
+    assert received["end_date"] == date(2026, 8, 27)
+    assert "One private check-in: sync, record, predict." in captured.out
+    assert "Latest recorded start: 2026-08-24" in captured.out
+    assert "CURRENT CYCLE" in captured.out
+    assert "Cycle day               4" in captured.out
+    assert "SHORT-RANGE PROBABILITIES" in captured.out
+    assert "Cycle-history baseline" in captured.out
+    assert "NEXT PERIOD ESTIMATE" in captured.out
+    assert "Naive median of completed cycle lengths" in captured.out
+    assert "Wearable models         Experimental" in captured.out
 
 
 def test_prediction_error_is_concise_and_nonzero(
@@ -626,7 +769,7 @@ def test_bare_command_guides_wearable_evaluation(
         received.update(arguments)
         return result
 
-    answers = iter(("3", "1", "2", "America/New_York"))
+    answers = iter(("5", "1", "2", "America/New_York"))
 
     def answer_prompt(_: str) -> str:
         """Return the next guided wearable selection."""
@@ -640,7 +783,7 @@ def test_bare_command_guides_wearable_evaluation(
 
     captured = capsys.readouterr()
     assert status == 0
-    assert "[3] Evaluate wearable models" in captured.out
+    assert "[5] Evaluate wearable models" in captured.out
     assert "EVALUATION MODE" in captured.out
     assert "Optimistic historical assumption" in captured.out
     assert received["history_path"] == Path("data/raw/history.csv")

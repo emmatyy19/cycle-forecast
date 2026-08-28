@@ -110,16 +110,16 @@ history-only baseline worth comparing against.
 
 ### Personal daily workflow
 
-- [ ] Add an interactive period-start recorder that validates dates, prevents
+- [x] Add an interactive period-start recorder that validates dates, prevents
   duplicates, and safely updates one private local history file without a
   monthly spreadsheet workflow
 - [ ] Package a local daily forecaster with its preprocessing, calibration, and
   version metadata; keep the cycle-history baseline as the default until a
   wearable candidate demonstrates reliable prospective improvement
-- [ ] Add one interactive daily command that can synchronize any Oura days
+- [x] Add one interactive daily command that can synchronize any Oura days
   available since the previous run, load the latest period history, and print
   today's exact-date and 1-, 3-, 7-, and 14-day probabilities
-- [ ] Make the daily command tolerate skipped days and multi-day synchronization
+- [x] Make the daily command tolerate skipped days and multi-day synchronization
   without duplicating records or requiring daily execution
 - [ ] Retrain after a newly recorded period completes the previous cycle, while
   reusing the current packaged model between period starts

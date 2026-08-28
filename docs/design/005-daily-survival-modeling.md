@@ -94,3 +94,28 @@ is represented as offset 15 for offset-error summaries. These diagnostic
 aggregates describe mornings, while the headline model scores continue to give
 each evaluation cycle equal weight. Per-cycle tables rank every candidate and
 omit the private cycle dates.
+
+## Operational daily forecast
+
+The local `daily` workflow incrementally synchronizes every supported Oura route
+through the current local date, offers the period-history recorder, and then
+forecasts from the updated history in one process. Incremental retrieval
+overlaps the least-complete route's latest requested date, allowing skipped
+execution days and upstream corrections while immutable snapshots and
+normalization prevent duplicate observations.
+
+Until a wearable candidate meets prospective promotion criteria, the official
+daily probability distribution is the empirical completed-cycle hazard
+baseline. It is fitted directly from all cycle lengths completed before the
+current period and reports probabilities for today, the inclusive 3-, 7-, and
+14-day planning windows, and the exhaustive later outcome. Oura synchronization
+still occurs first so prospective wearable evidence accumulates continuously;
+the terminal report states that wearable models are not yet used for the
+official forecast.
+
+For longer-range convenience, the same report includes one separately labeled
+point estimate. It prefers the selected packaged Phase A model and otherwise
+uses the median completed cycle length, rounded to the nearest operational day
+with halves rounded upward. This naive or model-based date does not replace the
+probability distribution and is explicitly described as a planning guess rather
+than a confidence window.

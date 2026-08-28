@@ -108,6 +108,61 @@ In VS Code, the same menu is available under **Run and Debug** as
 selection and confirmation prompts work normally. **Cycle Forecast: Train** is
 also available as a direct training shortcut.
 
+### Record a period without editing a spreadsheet
+
+Run the guided command and select your existing private history file:
+
+```bash
+uv run cycle-forecast period-record
+```
+
+The command defaults to today, previews the change, and asks for confirmation.
+It records a new period with an unknown duration while it is ongoing instead of
+inventing a value. Run it again with that same start date to fill in the final
+duration, or enter the duration when the next period starts. All updates use a
+validated temporary file and atomic replacement.
+
+For a repeatable explicit update:
+
+```bash
+uv run cycle-forecast period-record \
+  --history data/raw/cycle_history.csv \
+  --date 2026-08-27 \
+  --yes
+```
+
+If the prior period is still pending when adding the next start, the guided
+flow asks for its duration. Scripts can supply it with
+`--previous-period-length`. In VS Code, use **Cycle Forecast: Record Period** in
+Run and Debug.
+
+### One-command daily check-in
+
+The primary personal workflow synchronizes Oura through today, asks whether a
+new period started, and immediately produces updated period-start probabilities:
+
+```bash
+uv run cycle-forecast daily \
+  --history data/raw/cycle_history.csv \
+  --timezone America/Los_Angeles
+```
+
+The command safely overlaps the last retrieved Oura date, so it tolerates
+skipped days and captures later corrections without duplicating normalized
+observations. On the first-ever Oura sync, also provide the historical retrieval
+start with `--start-date YYYY-MM-DD`; later runs infer it from validated local
+snapshots.
+
+The forecast reports the chance of a period starting today and within 3, 7, and
+14 days. It also prints one explicitly labeled longer-range point estimate. That
+estimate uses `artifacts/selected-model.json` from Phase A when available and
+otherwise falls back to the median completed cycle length; the single date is a
+planning guess, not a confidence window. The short-range probabilities use the
+strongest evaluated cycle-history probability baseline. Synchronized wearable
+data remains available for local learning and evaluation, but wearable models
+stay explicitly experimental until prospective evidence supports promotion. In
+VS Code, use **Cycle Forecast: Daily** in Run and Debug.
+
 The training option uses `configs/phase_a.toml`, keeps the final temporal
 holdout reserved, and writes `artifacts/selected-model.json` plus
 `artifacts/training-run.json`. It refuses to replace them without confirmation.

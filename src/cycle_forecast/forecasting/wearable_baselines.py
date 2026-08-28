@@ -1,5 +1,6 @@
 """Provide daily history and wearable-informed probabilistic baselines."""
 
+from datetime import date, datetime
 from math import sqrt
 from statistics import fmean, pstdev
 from typing import Final
@@ -40,13 +41,52 @@ def forecast_with_empirical_cycle_hazard(
     DailyPeriodDistribution
         Exhaustive distribution for today through day 14 and later.
     """
+    return forecast_with_empirical_cycle_hazard_context(
+        cycle_day=row.aligned.cycle_day,
+        prediction_date=row.aligned.prediction_date,
+        prediction_cutoff=row.aligned.prediction_cutoff,
+        completed_cycle_lengths=completed_cycle_lengths,
+        smoothing=smoothing,
+    )
+
+
+def forecast_with_empirical_cycle_hazard_context(
+    *,
+    cycle_day: int,
+    prediction_date: date,
+    prediction_cutoff: datetime,
+    completed_cycle_lengths: tuple[int, ...],
+    smoothing: float = 1.0,
+) -> DailyPeriodDistribution:
+    """Forecast from cycle history without requiring a wearable feature row.
+
+    Parameters
+    ----------
+    cycle_day
+        One-indexed day within the current cycle.
+    prediction_date
+        Local calendar date of the forecast.
+    prediction_cutoff
+        Timezone-aware instant at which the forecast is made.
+    completed_cycle_lengths
+        Positive cycle lengths completed before the current cycle.
+    smoothing
+        Positive beta-binomial pseudocount for event and survival counts.
+
+    Returns
+    -------
+    DailyPeriodDistribution
+        Exhaustive distribution for today through day 14 and later.
+    """
+    if cycle_day < 1:
+        raise ValueError("cycle_day must be positive")
     if not completed_cycle_lengths or any(
         value < 1 for value in completed_cycle_lengths
     ):
         raise ValueError("completed_cycle_lengths must be positive and nonempty")
     if smoothing <= 0.0:
         raise ValueError("smoothing must be positive")
-    elapsed_days = row.aligned.cycle_day - 1
+    elapsed_days = cycle_day - 1
     hazards: list[float] = []
     for offset in range(DAILY_FORECAST_HORIZON_DAYS):
         event_day = elapsed_days + offset
@@ -54,8 +94,8 @@ def forecast_with_empirical_cycle_hazard(
         events = sum(length == event_day for length in completed_cycle_lengths)
         hazards.append((events + smoothing) / (at_risk + 2.0 * smoothing))
     return distribution_from_hazards(
-        prediction_date=row.aligned.prediction_date,
-        prediction_cutoff=row.aligned.prediction_cutoff,
+        prediction_date=prediction_date,
+        prediction_cutoff=prediction_cutoff,
         hazards=tuple(hazards),
     )
 

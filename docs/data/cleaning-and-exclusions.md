@@ -21,7 +21,8 @@ The loader applies the following decisions before dataset construction:
 | File is empty or lacks the exact header | Reject the file | The schema must be explicit and stable. |
 | Header differs from `cycle_start_date,period_length_days` | Reject the file | Missing, reordered, or unexpected columns can change field meaning. |
 | File contains no data records | Reject the file | A raw history must contain at least one observation, even though one observation cannot yet form a target. |
-| A row is blank, has a missing value, or does not contain exactly two values | Reject the file | Missing or extra values require source review rather than inference. |
+| A row is blank, has a missing date, or does not contain exactly two values | Reject the file | Missing dates or extra values require source review rather than inference. |
+| `period_length_days` is blank before the newest row | Reject the file | Only the ongoing newest period may have an as-yet unknown duration. |
 | A start date is not canonical ISO `YYYY-MM-DD` | Reject the file | Strict formatting avoids locale and parsing ambiguity. |
 | A period length is not a canonical positive whole number | Reject the file | Zero, negative, fractional, padded, or otherwise ambiguous values violate the source contract. |
 | A start date is duplicated | Reject the file | Two cycles cannot have the same unique start under this contract. |
@@ -40,7 +41,8 @@ not:
 
 - sort or reorder records
 - deduplicate starts
-- fill or impute missing dates or period lengths
+- fill or impute missing dates or period lengths; the newest duration may remain
+  explicitly unknown until it is recorded
 - correct malformed values
 - merge nearby starts
 - infer unrecorded cycles

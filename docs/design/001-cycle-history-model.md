@@ -91,13 +91,19 @@ cycle_start_date,period_length_days
 ```
 
 `cycle_start_date` is the first day of a period and `period_length_days` is the
-number of days in that period. The loader must reject malformed dates,
-non-positive or non-integer period lengths, missing values, duplicates,
+number of days in that period. The duration may be blank only on the newest row
+while that period is ongoing; older rows must be completed before another start
+is recorded. The loader must reject malformed dates, non-positive or
+non-integer known period lengths, other missing values, duplicates,
 nonchronological rows, unexpected columns, and explicitly defined implausible
-gaps. It must also reject a period length that extends beyond the following
-cycle start; this check is unavailable for the newest record until the next
-cycle is recorded. It must not silently sort, deduplicate, fill, or repair
+gaps. It must also reject a known period length that extends beyond the
+following cycle start. It must not silently sort, deduplicate, fill, or repair
 records.
+
+The local recorder writes through a validated temporary file and atomically
+replaces the destination. It can append a new ongoing start, complete the
+newest pending duration, or complete that duration while appending the next
+start. It never invents an unknown duration.
 
 The operational rationale for every current rejection, non-cleaning, and row
 exclusion rule is maintained in the
