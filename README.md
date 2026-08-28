@@ -171,6 +171,15 @@ selection, the chosen Ridge configuration is refit on all completed cycles for
 operational prediction. A new period start therefore teaches the point-estimate
 model one newly completed cycle, while ordinary daily runs skip retraining.
 
+After predicting, the workflow stores the first forecast made on each local
+date in `data/private/forecast-journal.jsonl`. The ignored journal uses
+owner-only permissions and includes forecast probabilities, the Phase A point
+estimate, model/data provenance, and the Oura retrieval bound; repeated runs on
+the same date preserve the original forecast. Once a later period start resolves
+those forecasts, `daily` reports cycle-weighted prospective log loss, Brier
+score, and point-estimate MAE. Until then it shows that prospective performance
+is waiting for a future period start.
+
 The training option uses `configs/phase_a.toml`, keeps the final temporal
 holdout reserved, and writes `artifacts/selected-model.json` plus
 `artifacts/training-run.json`. It refuses to replace them without confirmation.

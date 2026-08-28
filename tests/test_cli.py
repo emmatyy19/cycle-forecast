@@ -274,6 +274,8 @@ def test_daily_flow_syncs_checks_history_and_forecasts(
             str(tmp_path / "token.json"),
             "--snapshot-dir",
             str(tmp_path / "snapshots"),
+            "--journal",
+            str(tmp_path / "forecast-journal.jsonl"),
         )
     )
 
@@ -291,6 +293,9 @@ def test_daily_flow_syncs_checks_history_and_forecasts(
     assert "NEXT PERIOD ESTIMATE" in captured.out
     assert "Naive median of completed cycle lengths" in captured.out
     assert "Wearable models         Experimental" in captured.out
+    assert "PROSPECTIVE JOURNAL" in captured.out
+    assert "Waiting for a future period start" in captured.out
+    assert (tmp_path / "forecast-journal.jsonl").is_file()
 
 
 def test_prediction_error_is_concise_and_nonzero(
