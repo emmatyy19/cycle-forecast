@@ -121,7 +121,7 @@ history-only baseline worth comparing against.
   today's exact-date and 1-, 3-, 7-, and 14-day probabilities
 - [x] Make the daily command tolerate skipped days and multi-day synchronization
   without duplicating records or requiring daily execution
-- [ ] Retrain after a newly recorded period completes the previous cycle, while
+- [x] Retrain after a newly recorded period completes the previous cycle, while
   reusing the current packaged model between period starts
 - [ ] Show wearable forecasts as experimental comparisons until promotion
   criteria based on prospective cycle-level evaluation are satisfied

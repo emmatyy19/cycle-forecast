@@ -9,6 +9,7 @@ from cycle_forecast.features.cycle_history import (
     HistoryFeatureVector,
     build_development_history_features,
     build_history_feature_vector,
+    build_operational_history_features,
 )
 from cycle_forecast.features.wearable import (
     WEARABLE_FEATURE_NAMES,
@@ -29,5 +30,6 @@ __all__ = [
     "WearableFeatureRow",
     "build_development_history_features",
     "build_history_feature_vector",
+    "build_operational_history_features",
     "build_wearable_feature_row",
 ]

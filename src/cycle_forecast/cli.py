@@ -39,11 +39,14 @@ from cycle_forecast.prediction_daily import (
     predict_daily_from_history,
 )
 from cycle_forecast.training import (
+    DailyModelRefreshResult,
+    DailyModelRefreshStatus,
     LocalTrainingResult,
     WearableEvaluationMode,
     WearableEvaluationResult,
     evaluate_local_wearable_models,
     load_model_package,
+    refresh_daily_model_if_needed,
     train_from_local_history,
 )
 
@@ -119,6 +122,12 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=DEFAULT_ARTIFACT_DIRECTORY / "selected-model.json",
         help="preferred Phase A model (falls back to a naive history median)",
+    )
+    daily.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_TRAINING_CONFIGURATION,
+        help="Phase A training configuration used when the model is stale",
     )
     daily.add_argument("--timezone", help="active IANA timezone")
     daily.add_argument("--start-date", type=date.fromisoformat)
@@ -648,10 +657,34 @@ def _render_daily_prediction(
     print("\nFor personal planning only; not medical advice.", file=output)
 
 
+def _render_daily_model_refresh(
+    *, result: DailyModelRefreshResult, output: TextIO
+) -> None:
+    """Explain whether today's check-in reused or retrained Phase A."""
+    print("\n3. Model update", file=output)
+    if result.status is DailyModelRefreshStatus.CURRENT:
+        print(
+            "   ✓ Existing Phase A model is current; no retraining needed.", file=output
+        )
+        return
+    action = (
+        "created" if result.status is DailyModelRefreshStatus.CREATED else "refreshed"
+    )
+    assert result.training is not None
+    print(f"   ✓ Phase A model {action} from updated cycle history.", file=output)
+    print(
+        f"   Development MAE: "
+        f"{result.training.development_mean_absolute_error_days:.2f} days "
+        f"across {result.training.development_forecast_count} forecasts.",
+        file=output,
+    )
+
+
 def _run_daily(
     *,
     history_path: Path | None,
     model_path: Path,
+    configuration_path: Path,
     timezone_name: str | None,
     explicit_start_date: date | None,
     token_path: Path,
@@ -720,7 +753,15 @@ def _run_daily(
     else:
         print("   ✓ Period history is current.", file=output)
 
-    print("\n3. Producing today's forecast…", file=output)
+    refresh = refresh_daily_model_if_needed(
+        history_path=resolved_history,
+        model_path=model_path,
+        configuration_path=configuration_path,
+        code_version=f"cycle-forecast-{__version__}",
+    )
+    _render_daily_model_refresh(result=refresh, output=output)
+
+    print("\n4. Producing today's forecast…", file=output)
     prediction = predict_daily_from_history(
         history_path=resolved_history,
         prediction_date=resolved_today,
@@ -728,7 +769,7 @@ def _run_daily(
     )
     point_estimate = estimate_next_start_from_history(
         history_path=resolved_history,
-        model_path=model_path,
+        model_path=refresh.model_path,
     )
     _render_daily_prediction(
         prediction=prediction,
@@ -1107,6 +1148,7 @@ def _run_interactive(*, input_fn: Callable[[str], str], output: TextIO) -> None:
         _run_daily(
             history_path=None,
             model_path=DEFAULT_ARTIFACT_DIRECTORY / "selected-model.json",
+            configuration_path=DEFAULT_TRAINING_CONFIGURATION,
             timezone_name=None,
             explicit_start_date=None,
             token_path=DEFAULT_OURA_TOKEN_PATH,
@@ -1230,6 +1272,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             _run_daily(
                 history_path=arguments.history,
                 model_path=arguments.model,
+                configuration_path=arguments.config,
                 timezone_name=arguments.timezone,
                 explicit_start_date=arguments.start_date,
                 token_path=arguments.token_path,

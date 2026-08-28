@@ -1,5 +1,10 @@
 """Configure, record, and package reproducible model-training runs."""
 
+from cycle_forecast.training.daily_refresh import (
+    DailyModelRefreshResult,
+    DailyModelRefreshStatus,
+    refresh_daily_model_if_needed,
+)
 from cycle_forecast.training.delivery import (
     MODEL_PACKAGE_SCHEMA_VERSION,
     TRAINING_CONFIG_SCHEMA_VERSION,
@@ -42,6 +47,8 @@ __all__ = [
     "MODEL_PACKAGE_SCHEMA_VERSION",
     "TRAINING_CONFIG_SCHEMA_VERSION",
     "WEARABLE_EVALUATION_WORKFLOW_VERSION",
+    "DailyModelRefreshResult",
+    "DailyModelRefreshStatus",
     "LocalTrainingResult",
     "ModelPackage",
     "TrainingConfig",
@@ -63,6 +70,7 @@ __all__ = [
     "load_training_config",
     "predict_with_model_package",
     "record_training_run",
+    "refresh_daily_model_if_needed",
     "save_model_package",
     "save_training_run",
     "train_from_local_history",

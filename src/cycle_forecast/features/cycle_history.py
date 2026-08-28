@@ -5,6 +5,7 @@ from datetime import date
 from enum import StrEnum, auto
 from statistics import mean, median
 
+from cycle_forecast.data.cycle_history import CycleDataset
 from cycle_forecast.forecasting.baselines import WalkForwardContext
 from cycle_forecast.forecasting.holdout import TemporalHoldoutSplit
 
@@ -287,6 +288,61 @@ def build_development_history_features(
     return HistoryFeatureDataset(
         dataset_fingerprint=split.dataset_fingerprint,
         holdout_policy_version=split.policy_version,
+        feature_version=CYCLE_HISTORY_FEATURE_VERSION,
+        configuration=configuration,
+        feature_names=_feature_names(configuration=configuration),
+        rows=tuple(rows),
+    )
+
+
+def build_operational_history_features(
+    *,
+    dataset: CycleDataset,
+    configuration: CycleHistoryFeatureConfig,
+    holdout_policy_version: str,
+) -> HistoryFeatureDataset:
+    """Build deployment features from every completed cycle after evaluation.
+
+    Parameters
+    ----------
+    dataset
+        Complete validated cycle dataset.
+    configuration
+        Feature settings selected without consulting final holdout outcomes.
+    holdout_policy_version
+        Evaluation policy retained as package provenance.
+
+    Returns
+    -------
+    HistoryFeatureDataset
+        Supervised rows spanning all completed cycles after warm-up.
+
+    Notes
+    -----
+    This function is for operational refitting only after model family and
+    hyperparameters have been selected on development data. Evaluation metrics
+    remain those calculated before the final holdout is incorporated.
+    """
+    minimum_history = _minimum_history(configuration=configuration)
+    rows: list[HistoryFeatureRow] = []
+    for position in range(minimum_history, len(dataset.rows)):
+        target_row = dataset.rows[position]
+        vector = build_history_feature_vector(
+            context=WalkForwardContext(
+                cycle_start_date=target_row.cycle_start_date,
+                history=dataset.rows[:position],
+            ),
+            configuration=configuration,
+        )
+        rows.append(
+            HistoryFeatureRow(
+                vector=vector,
+                target_cycle_length_days=target_row.cycle_length_days,
+            )
+        )
+    return HistoryFeatureDataset(
+        dataset_fingerprint=dataset.fingerprint,
+        holdout_policy_version=holdout_policy_version,
         feature_version=CYCLE_HISTORY_FEATURE_VERSION,
         configuration=configuration,
         feature_names=_feature_names(configuration=configuration),

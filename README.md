@@ -163,6 +163,14 @@ data remains available for local learning and evaluation, but wearable models
 stay explicitly experimental until prospective evidence supports promotion. In
 VS Code, use **Cycle Forecast: Daily** in Run and Debug.
 
+Before predicting, the daily workflow fingerprints the current history. It
+reuses `artifacts/selected-model.json` when that fingerprint is current and
+otherwise retrains complete replacement artifacts in a temporary directory.
+Model selection and reported development metrics remain leakage-safe; after
+selection, the chosen Ridge configuration is refit on all completed cycles for
+operational prediction. A new period start therefore teaches the point-estimate
+model one newly completed cycle, while ordinary daily runs skip retraining.
+
 The training option uses `configs/phase_a.toml`, keeps the final temporal
 holdout reserved, and writes `artifacts/selected-model.json` plus
 `artifacts/training-run.json`. It refuses to replace them without confirmation.
