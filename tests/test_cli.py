@@ -12,11 +12,16 @@ from cycle_forecast.data.oura_auth import OuraAuthorizationError, OuraToken
 from cycle_forecast.data.oura_client import OuraRoute
 from cycle_forecast.data.oura_status import OuraStatus
 from cycle_forecast.data.oura_sync import OuraRouteSyncResult
+from cycle_forecast.evaluation.prospective_journal import ProspectivePerformanceSummary
 from cycle_forecast.evaluation.wearable import (
     DailyCandidateEvaluation,
     DailyModelComparison,
 )
-from cycle_forecast.forecasting.daily import DailyForecastEvaluation
+from cycle_forecast.forecasting.daily import (
+    DailyForecastEvaluation,
+    DailyPeriodDistribution,
+)
+from cycle_forecast.prediction_wearable import WearableDailyPrediction
 from cycle_forecast.training import (
     DailyModelRefreshResult,
     DailyModelRefreshStatus,
@@ -32,6 +37,29 @@ from cycle_forecast.training import (
     WearableWalkForwardComparison,
 )
 from tests.test_prediction import write_test_model
+
+
+def _resolved_prospective_summary(**_: object) -> ProspectivePerformanceSummary:
+    """Return invented resolved history and wearable performance."""
+    return ProspectivePerformanceSummary(
+        journal_forecast_count=20,
+        resolved_forecast_count=12,
+        completed_cycle_count=2,
+        mean_cycle_logarithmic_loss=0.4,
+        mean_cycle_brier_score=0.2,
+        mean_cycle_window_brier_scores={1: 0.1, 3: 0.2, 7: 0.3, 14: 0.4},
+        mean_cycle_point_absolute_error_days=1.5,
+        wearable_resolved_forecast_count=10,
+        wearable_completed_cycle_count=2,
+        wearable_mean_cycle_logarithmic_loss=0.5,
+        wearable_mean_cycle_brier_score=0.3,
+        wearable_mean_cycle_window_brier_scores={
+            1: 0.1,
+            3: 0.2,
+            7: 0.3,
+            14: 0.4,
+        },
+    )
 
 
 def test_predict_command_prints_machine_readable_json(
@@ -255,10 +283,31 @@ def test_daily_flow_syncs_checks_history_and_forecasts(
             training=None,
         )
 
+    def wearable_shadow(**arguments: object) -> WearableDailyPrediction:
+        """Return an invented experimental distribution at the shared cutoff."""
+        prediction_date = arguments["prediction_date"]
+        prediction_cutoff = arguments["prediction_cutoff"]
+        assert isinstance(prediction_date, date)
+        assert isinstance(prediction_cutoff, datetime)
+        return WearableDailyPrediction(
+            model_version="wearable-neighbor-v1",
+            training_morning_count=42,
+            distribution=DailyPeriodDistribution(
+                prediction_date=prediction_date,
+                prediction_cutoff=prediction_cutoff,
+                daily_probabilities=(0.01,) * 15,
+                after_horizon_probability=0.85,
+            ),
+        )
+
     monkeypatch.setattr(cli, "sync_oura", sync)
     monkeypatch.setattr(cli, "resolve_sync_start_date", resolve_start)
     monkeypatch.setattr(cli, "datetime", FixedDateTime)
     monkeypatch.setattr(cli, "refresh_daily_model_if_needed", reuse_model)
+    monkeypatch.setattr(cli, "predict_daily_with_wearable_neighbors", wearable_shadow)
+    monkeypatch.setattr(
+        cli, "summarize_prospective_performance", _resolved_prospective_summary
+    )
     monkeypatch.setattr("builtins.input", answer_no)
 
     status = main(
@@ -292,10 +341,16 @@ def test_daily_flow_syncs_checks_history_and_forecasts(
     assert "Cycle-history baseline" in captured.out
     assert "NEXT PERIOD ESTIMATE" in captured.out
     assert "Naive median of completed cycle lengths" in captured.out
-    assert "Wearable models         Experimental" in captured.out
+    assert "EXPERIMENTAL WEARABLE SHADOW" in captured.out
+    assert "Wearable nearest neighbors" in captured.out
+    assert "Training mornings       42" in captured.out
     assert "PROSPECTIVE JOURNAL" in captured.out
-    assert "Waiting for a future period start" in captured.out
-    assert (tmp_path / "forecast-journal.jsonl").is_file()
+    assert "PAIRED SHADOW COMPARISON" in captured.out
+    assert "Wearable log loss       0.500" in captured.out
+    journal_path = tmp_path / "forecast-journal.jsonl"
+    assert journal_path.is_file()
+    journal_entry = json.loads(journal_path.read_text(encoding="utf-8"))
+    assert journal_entry["wearable_model_version"] == "wearable-neighbor-v1"
 
 
 def test_prediction_error_is_concise_and_nonzero(

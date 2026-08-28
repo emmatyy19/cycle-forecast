@@ -21,13 +21,13 @@ from cycle_forecast.forecasting.daily import (
 )
 from cycle_forecast.prediction_daily import DailyPointEstimate, HistoryDailyPrediction
 
-PROSPECTIVE_JOURNAL_SCHEMA_VERSION: Final = "prospective-forecast-journal-v1"
+PROSPECTIVE_JOURNAL_SCHEMA_VERSION: Final = "prospective-forecast-journal-v2"
 """Version of immutable forecast entries and delayed scoring semantics."""
 
 DEFAULT_PROSPECTIVE_JOURNAL_PATH: Final = Path("data/private/forecast-journal.jsonl")
 """Ignored owner-private journal used by the unified daily workflow."""
 
-_ENTRY_FIELDS: Final[set[str]] = {
+_V1_ENTRY_FIELDS: Final[set[str]] = {
     "schema_version",
     "prediction_date",
     "prediction_cutoff",
@@ -41,6 +41,11 @@ _ENTRY_FIELDS: Final[set[str]] = {
     "point_estimate_method",
     "model_dataset_fingerprint",
     "oura_synced_through",
+}
+_ENTRY_FIELDS: Final[set[str]] = _V1_ENTRY_FIELDS | {
+    "wearable_model_version",
+    "wearable_daily_probabilities",
+    "wearable_after_horizon_probability",
 }
 
 
@@ -65,6 +70,9 @@ class ProspectiveForecastEntry:
     point_estimate_method: str
     model_dataset_fingerprint: str
     oura_synced_through: date
+    wearable_model_version: str | None = None
+    wearable_daily_probabilities: tuple[float, ...] | None = None
+    wearable_after_horizon_probability: float | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -78,6 +86,11 @@ class ProspectivePerformanceSummary:
     mean_cycle_brier_score: float | None
     mean_cycle_window_brier_scores: dict[int, float]
     mean_cycle_point_absolute_error_days: float | None
+    wearable_resolved_forecast_count: int
+    wearable_completed_cycle_count: int
+    wearable_mean_cycle_logarithmic_loss: float | None
+    wearable_mean_cycle_brier_score: float | None
+    wearable_mean_cycle_window_brier_scores: dict[int, float]
 
 
 def build_prospective_entry(
@@ -86,6 +99,8 @@ def build_prospective_entry(
     point_estimate: DailyPointEstimate,
     model_dataset_fingerprint: str,
     oura_synced_through: date,
+    wearable_model_version: str | None = None,
+    wearable_distribution: DailyPeriodDistribution | None = None,
 ) -> ProspectiveForecastEntry:
     """Build a versioned journal entry from the completed daily forecast."""
     return ProspectiveForecastEntry(
@@ -102,14 +117,28 @@ def build_prospective_entry(
         point_estimate_method=point_estimate.method.value,
         model_dataset_fingerprint=model_dataset_fingerprint,
         oura_synced_through=oura_synced_through,
+        wearable_model_version=wearable_model_version,
+        wearable_daily_probabilities=(
+            wearable_distribution.daily_probabilities
+            if wearable_distribution is not None
+            else None
+        ),
+        wearable_after_horizon_probability=(
+            wearable_distribution.after_horizon_probability
+            if wearable_distribution is not None
+            else None
+        ),
     )
 
 
 def _serialize_entry(*, entry: ProspectiveForecastEntry) -> bytes:
     """Encode one entry as canonical newline-delimited JSON."""
+    payload = asdict(entry)
+    if entry.schema_version == "prospective-forecast-journal-v1":
+        for field in _ENTRY_FIELDS - _V1_ENTRY_FIELDS:
+            del payload[field]
     return (
-        json.dumps(asdict(entry), default=str, separators=(",", ":"), sort_keys=True)
-        + "\n"
+        json.dumps(payload, default=str, separators=(",", ":"), sort_keys=True) + "\n"
     ).encode()
 
 
@@ -121,12 +150,21 @@ def _entry_from_object(*, value: object, line_number: int) -> ProspectiveForecas
         )
     payload = cast(dict[object, object], value)
     try:
+        schema_version = payload.get("schema_version")
+        expected_fields = (
+            _V1_ENTRY_FIELDS
+            if schema_version == "prospective-forecast-journal-v1"
+            else _ENTRY_FIELDS
+        )
         if (
             any(not isinstance(key, str) for key in payload)
-            or {key for key in payload if isinstance(key, str)} != _ENTRY_FIELDS
+            or {key for key in payload if isinstance(key, str)} != expected_fields
         ):
             raise ValueError("entry fields do not match the journal schema")
-        if payload.get("schema_version") != PROSPECTIVE_JOURNAL_SCHEMA_VERSION:
+        if schema_version not in {
+            "prospective-forecast-journal-v1",
+            PROSPECTIVE_JOURNAL_SCHEMA_VERSION,
+        }:
             raise ValueError("unsupported schema version")
         probabilities_raw = payload["daily_probabilities"]
         if not isinstance(probabilities_raw, list):
@@ -139,8 +177,31 @@ def _entry_from_object(*, value: object, line_number: int) -> ProspectiveForecas
         )
         if len(probabilities) != len(probability_items):
             raise ValueError("daily probabilities must be numeric")
+        wearable_probabilities_raw = payload.get("wearable_daily_probabilities")
+        if wearable_probabilities_raw is not None and not isinstance(
+            wearable_probabilities_raw, list
+        ):
+            raise ValueError("wearable daily probabilities must be an array")
+        wearable_items = (
+            cast(list[object], wearable_probabilities_raw)
+            if wearable_probabilities_raw is not None
+            else None
+        )
+        wearable_probabilities = (
+            tuple(
+                float(item)
+                for item in wearable_items
+                if isinstance(item, (int, float)) and not isinstance(item, bool)
+            )
+            if wearable_items is not None
+            else None
+        )
+        if wearable_items is not None and len(wearable_probabilities or ()) != len(
+            wearable_items
+        ):
+            raise ValueError("wearable daily probabilities must be numeric")
         entry = ProspectiveForecastEntry(
-            schema_version=PROSPECTIVE_JOURNAL_SCHEMA_VERSION,
+            schema_version=str(schema_version),
             prediction_date=date.fromisoformat(str(payload["prediction_date"])),
             prediction_cutoff=datetime.fromisoformat(str(payload["prediction_cutoff"])),
             current_cycle_start_date=date.fromisoformat(
@@ -157,6 +218,17 @@ def _entry_from_object(*, value: object, line_number: int) -> ProspectiveForecas
             point_estimate_method=str(payload["point_estimate_method"]),
             model_dataset_fingerprint=str(payload["model_dataset_fingerprint"]),
             oura_synced_through=date.fromisoformat(str(payload["oura_synced_through"])),
+            wearable_model_version=(
+                str(payload["wearable_model_version"])
+                if payload.get("wearable_model_version") is not None
+                else None
+            ),
+            wearable_daily_probabilities=wearable_probabilities,
+            wearable_after_horizon_probability=(
+                float(str(payload["wearable_after_horizon_probability"]))
+                if payload.get("wearable_after_horizon_probability") is not None
+                else None
+            ),
         )
         DailyPeriodDistribution(
             prediction_date=entry.prediction_date,
@@ -164,6 +236,15 @@ def _entry_from_object(*, value: object, line_number: int) -> ProspectiveForecas
             daily_probabilities=entry.daily_probabilities,
             after_horizon_probability=entry.after_horizon_probability,
         )
+        if entry.wearable_daily_probabilities is not None:
+            DailyPeriodDistribution(
+                prediction_date=entry.prediction_date,
+                prediction_cutoff=entry.prediction_cutoff,
+                daily_probabilities=entry.wearable_daily_probabilities,
+                after_horizon_probability=cast(
+                    float, entry.wearable_after_horizon_probability
+                ),
+            )
     except (KeyError, TypeError, ValueError) as error:
         raise ProspectiveJournalError(
             f"invalid forecast journal entry on line {line_number}: {error}"
@@ -181,6 +262,14 @@ def _entry_from_object(*, value: object, line_number: int) -> ProspectiveForecas
         or entry.point_estimate_date < entry.current_cycle_start_date
         or entry.oura_synced_through < entry.prediction_date
         or re.fullmatch(r"sha256:[0-9a-f]{64}", entry.model_dataset_fingerprint) is None
+        or (
+            (entry.wearable_model_version is None)
+            != (entry.wearable_daily_probabilities is None)
+        )
+        or (
+            (entry.wearable_model_version is None)
+            != (entry.wearable_after_horizon_probability is None)
+        )
     ):
         raise ProspectiveJournalError(
             f"invalid forecast journal entry on line {line_number}"
@@ -286,6 +375,8 @@ def summarize_prospective_performance(
         grouped.setdefault(entry.current_cycle_start_date, []).append(entry)
     cycle_evaluations: list[DailyForecastEvaluation] = []
     cycle_point_errors: list[float] = []
+    wearable_cycle_evaluations: list[DailyForecastEvaluation] = []
+    wearable_resolved_count = 0
     resolved_count = 0
     for cycle_start, cycle_entries in grouped.items():
         next_start = next_starts[cycle_start]
@@ -307,6 +398,34 @@ def summarize_prospective_performance(
                 outcome_offsets=outcomes,
             )
         )
+        wearable_entries = tuple(
+            entry
+            for entry in cycle_entries
+            if entry.wearable_daily_probabilities is not None
+        )
+        if wearable_entries:
+            wearable_cycle_evaluations.append(
+                evaluate_daily_distributions(
+                    forecasts=tuple(
+                        DailyPeriodDistribution(
+                            prediction_date=entry.prediction_date,
+                            prediction_cutoff=entry.prediction_cutoff,
+                            daily_probabilities=cast(
+                                tuple[float, ...], entry.wearable_daily_probabilities
+                            ),
+                            after_horizon_probability=cast(
+                                float, entry.wearable_after_horizon_probability
+                            ),
+                        )
+                        for entry in wearable_entries
+                    ),
+                    outcome_offsets=tuple(
+                        (next_start - entry.prediction_date).days
+                        for entry in wearable_entries
+                    ),
+                )
+            )
+            wearable_resolved_count += len(wearable_entries)
         cycle_point_errors.append(
             sum(
                 abs((entry.point_estimate_date - next_start).days)
@@ -325,7 +444,13 @@ def summarize_prospective_performance(
             mean_cycle_brier_score=None,
             mean_cycle_window_brier_scores={},
             mean_cycle_point_absolute_error_days=None,
+            wearable_resolved_forecast_count=0,
+            wearable_completed_cycle_count=0,
+            wearable_mean_cycle_logarithmic_loss=None,
+            wearable_mean_cycle_brier_score=None,
+            wearable_mean_cycle_window_brier_scores={},
         )
+    wearable_cycle_count = len(wearable_cycle_evaluations)
     return ProspectivePerformanceSummary(
         journal_forecast_count=len(entries),
         resolved_forecast_count=resolved_count,
@@ -347,4 +472,30 @@ def summarize_prospective_performance(
             for window in CALIBRATION_WINDOWS
         },
         mean_cycle_point_absolute_error_days=sum(cycle_point_errors) / cycle_count,
+        wearable_resolved_forecast_count=wearable_resolved_count,
+        wearable_completed_cycle_count=wearable_cycle_count,
+        wearable_mean_cycle_logarithmic_loss=(
+            sum(item.logarithmic_loss for item in wearable_cycle_evaluations)
+            / wearable_cycle_count
+            if wearable_cycle_count
+            else None
+        ),
+        wearable_mean_cycle_brier_score=(
+            sum(item.multiclass_brier_score for item in wearable_cycle_evaluations)
+            / wearable_cycle_count
+            if wearable_cycle_count
+            else None
+        ),
+        wearable_mean_cycle_window_brier_scores=(
+            {
+                window: sum(
+                    item.window_brier_scores[window]
+                    for item in wearable_cycle_evaluations
+                )
+                / wearable_cycle_count
+                for window in CALIBRATION_WINDOWS
+            }
+            if wearable_cycle_count
+            else {}
+        ),
     )

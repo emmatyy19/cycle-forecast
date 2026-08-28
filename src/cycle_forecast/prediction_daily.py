@@ -102,6 +102,7 @@ def predict_daily_from_history(
     prediction_date: date,
     timezone_name: str,
     prediction_hour: int = 9,
+    prediction_cutoff: datetime | None = None,
 ) -> HistoryDailyPrediction:
     """Forecast today's period-start probabilities from completed cycles.
 
@@ -143,11 +144,13 @@ def predict_daily_from_history(
         (following.cycle_start_date - current.cycle_start_date).days
         for current, following in pairwise(records)
     )
-    cutoff = datetime.combine(
-        prediction_date,
-        time(hour=prediction_hour),
-        tzinfo=timezone,
+    cutoff = prediction_cutoff or datetime.combine(
+        prediction_date, time(hour=prediction_hour), tzinfo=timezone
     )
+    if cutoff.tzinfo is None or cutoff.utcoffset() is None:
+        raise ValueError("prediction_cutoff must be timezone-aware")
+    if cutoff.astimezone(timezone).date() != prediction_date:
+        raise ValueError("prediction_cutoff must fall on prediction_date")
     distribution = forecast_with_empirical_cycle_hazard_context(
         cycle_day=cycle_day,
         prediction_date=prediction_date,
