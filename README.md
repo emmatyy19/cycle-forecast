@@ -153,6 +153,11 @@ observations. On the first-ever Oura sync, also provide the historical retrieval
 start with `--start-date YYYY-MM-DD`; later runs infer it from validated local
 snapshots.
 
+If no newer period has started and the latest period still has an unknown
+duration, the daily check-in asks whether it has ended. Answer yes to enter the
+inclusive number of bleeding days; the existing start is updated atomically
+without creating a duplicate cycle. Answer no while it is still ongoing.
+
 The forecast reports the chance of a period starting today and within 3, 7, and
 14 days. It also prints one explicitly labeled longer-range point estimate. That
 estimate uses `artifacts/selected-model.json` from Phase A when available and

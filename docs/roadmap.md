@@ -125,6 +125,8 @@ history-only baseline worth comparing against.
 - [x] Add one interactive daily command that can synchronize any Oura days
   available since the previous run, load the latest period history, and print
   today's exact-date and 1-, 3-, 7-, and 14-day probabilities
+- [x] Let the daily check-in complete the newest period duration after bleeding
+  ends without recording a duplicate cycle start
 - [x] Make the daily command tolerate skipped days and multi-day synchronization
   without duplicating records or requiring daily execution
 - [x] Retrain after a newly recorded period completes the previous cycle, while
