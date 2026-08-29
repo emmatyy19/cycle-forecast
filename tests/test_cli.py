@@ -12,7 +12,11 @@ from cycle_forecast.data.oura_auth import OuraAuthorizationError, OuraToken
 from cycle_forecast.data.oura_client import OuraRoute
 from cycle_forecast.data.oura_status import OuraStatus
 from cycle_forecast.data.oura_sync import OuraRouteSyncResult
-from cycle_forecast.evaluation.prospective_journal import ProspectivePerformanceSummary
+from cycle_forecast.evaluation.prospective_journal import (
+    ProspectivePerformanceSummary,
+    WearablePromotionReview,
+    WearablePromotionStatus,
+)
 from cycle_forecast.evaluation.wearable import (
     DailyCandidateEvaluation,
     DailyModelComparison,
@@ -69,6 +73,30 @@ def _resolved_prospective_summary(**_: object) -> ProspectivePerformanceSummary:
             7: 0.3,
             14: 0.4,
         },
+        promotion_review=WearablePromotionReview(
+            candidate_version="stage-aware-temperature-blend-v1",
+            status=WearablePromotionStatus.INSUFFICIENT_EVIDENCE,
+            eligible_cycle_count=2,
+            paired_forecast_count=10,
+            cycle_availability_rates=(1.0, 0.9),
+            history_mean_cycle_logarithmic_loss=0.4,
+            candidate_mean_cycle_logarithmic_loss=0.45,
+            history_mean_cycle_brier_score=0.2,
+            candidate_mean_cycle_brier_score=0.25,
+            history_mean_cycle_window_brier_scores={
+                1: 0.1,
+                3: 0.2,
+                7: 0.3,
+                14: 0.4,
+            },
+            candidate_mean_cycle_window_brier_scores={
+                1: 0.1,
+                3: 0.2,
+                7: 0.3,
+                14: 0.4,
+            },
+            candidate_logarithmic_loss_cycle_wins=1,
+        ),
     )
 
 
@@ -366,6 +394,10 @@ def test_daily_flow_syncs_checks_history_and_forecasts(
     assert "PAIRED SHADOW COMPARISON" in captured.out
     assert "Wearable log loss       0.500" in captured.out
     assert "History + temp log loss 0.450" in captured.out
+    assert "WEARABLE PROMOTION REVIEW" in captured.out
+    assert "Eligible cycles         2 / 3 minimum" in captured.out
+    assert "Cycle availability      100% / 90%" in captured.out
+    assert "Decision                Insufficient Evidence" in captured.out
     journal_path = tmp_path / "forecast-journal.jsonl"
     assert journal_path.is_file()
     journal_entry = json.loads(journal_path.read_text(encoding="utf-8"))

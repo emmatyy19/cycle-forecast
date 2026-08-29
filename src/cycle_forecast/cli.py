@@ -34,7 +34,9 @@ from cycle_forecast.data.period_recording import (
 )
 from cycle_forecast.evaluation.prospective_journal import (
     DEFAULT_PROSPECTIVE_JOURNAL_PATH,
+    PROMOTION_MINIMUM_CYCLE_COUNT,
     ProspectivePerformanceSummary,
+    WearablePromotionReview,
     append_prospective_forecast,
     build_prospective_entry,
     load_prospective_journal,
@@ -714,6 +716,56 @@ def _render_wearable_shadow(
     print(f"  {'Use':<24}Evaluation only · not the official forecast", file=output)
 
 
+def _render_promotion_review(
+    *, review: WearablePromotionReview, output: TextIO
+) -> None:
+    """Render the private-safe, predeclared wearable promotion decision."""
+    print("\n  WEARABLE PROMOTION REVIEW", file=output)
+    print(f"  {'Candidate':<24}{review.candidate_version}", file=output)
+    print(
+        f"  {'Eligible cycles':<24}{review.eligible_cycle_count} / "
+        f"{PROMOTION_MINIMUM_CYCLE_COUNT} minimum",
+        file=output,
+    )
+    print(f"  {'Paired forecasts':<24}{review.paired_forecast_count}", file=output)
+    if review.cycle_availability_rates:
+        availability = " / ".join(
+            f"{rate:.0%}" for rate in review.cycle_availability_rates
+        )
+        print(f"  {'Cycle availability':<24}{availability}", file=output)
+    if review.history_mean_cycle_logarithmic_loss is not None:
+        assert review.candidate_mean_cycle_logarithmic_loss is not None
+        assert review.history_mean_cycle_brier_score is not None
+        assert review.candidate_mean_cycle_brier_score is not None
+        print(
+            f"  {'Paired log loss H/C':<24}"
+            f"{review.history_mean_cycle_logarithmic_loss:.3f} / "
+            f"{review.candidate_mean_cycle_logarithmic_loss:.3f}",
+            file=output,
+        )
+        print(
+            f"  {'Paired Brier H/C':<24}"
+            f"{review.history_mean_cycle_brier_score:.3f} / "
+            f"{review.candidate_mean_cycle_brier_score:.3f}",
+            file=output,
+        )
+        print(
+            f"  {'Candidate cycle wins':<24}"
+            f"{review.candidate_logarithmic_loss_cycle_wins} / "
+            f"{review.eligible_cycle_count}",
+            file=output,
+        )
+        window_deltas = " / ".join(
+            f"{review.candidate_mean_cycle_window_brier_scores[window] - review.history_mean_cycle_window_brier_scores[window]:+.3f}"
+            for window in (3, 7, 14)
+        )
+        print(f"  {'Window deltas 3/7/14d':<24}{window_deltas}", file=output)
+    print(
+        f"  {'Decision':<24}{review.status.value.replace('_', ' ').title()}",
+        file=output,
+    )
+
+
 def _render_prospective_performance(
     *, summary: ProspectivePerformanceSummary, appended: bool, output: TextIO
 ) -> None:
@@ -729,6 +781,7 @@ def _render_prospective_performance(
         print(
             "  Performance             Waiting for a future period start", file=output
         )
+        _render_promotion_review(review=summary.promotion_review, output=output)
         return
     assert summary.mean_cycle_logarithmic_loss is not None
     assert summary.mean_cycle_brier_score is not None
@@ -807,6 +860,7 @@ def _render_prospective_performance(
             "  History + temp          Waiting for a completed shadow cycle",
             file=output,
         )
+    _render_promotion_review(review=summary.promotion_review, output=output)
 
 
 def _render_daily_model_refresh(

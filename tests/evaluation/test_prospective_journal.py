@@ -1,7 +1,8 @@
 """Tests for immutable private prospective forecasts and delayed scoring."""
 
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
+from itertools import pairwise
 from pathlib import Path
 from stat import S_IMODE
 
@@ -13,9 +14,13 @@ from cycle_forecast.evaluation.prospective_journal import (
     PROSPECTIVE_JOURNAL_SCHEMA_VERSION,
     ProspectiveForecastEntry,
     ProspectiveJournalError,
+    WearablePromotionStatus,
     append_prospective_forecast,
     load_prospective_journal,
     summarize_prospective_performance,
+)
+from cycle_forecast.forecasting.wearable_baselines import (
+    STAGE_AWARE_TEMPERATURE_BLEND_VERSION,
 )
 
 
@@ -28,6 +33,7 @@ def _entry(
     point_estimate_date: date,
     wearable: bool = False,
     temperature: bool = False,
+    temperature_perfect: bool | None = None,
 ) -> ProspectiveForecastEntry:
     """Build an invented exhaustive journal entry for one morning."""
     probabilities = [0.0] * 15
@@ -36,6 +42,15 @@ def _entry(
         probabilities[actual_offset] = 1.0
     else:
         after = 1.0
+    temperature_probabilities = [0.0] * 15
+    temperature_after = 0.0
+    candidate_is_perfect = (
+        temperature_perfect if temperature_perfect is not None else perfect
+    )
+    if candidate_is_perfect:
+        temperature_probabilities[actual_offset] = 1.0
+    else:
+        temperature_after = 1.0
     return ProspectiveForecastEntry(
         schema_version=PROSPECTIVE_JOURNAL_SCHEMA_VERSION,
         prediction_date=prediction_date,
@@ -57,9 +72,15 @@ def _entry(
         wearable_model_version="synthetic-wearable-v1" if wearable else None,
         wearable_daily_probabilities=tuple(probabilities) if wearable else None,
         wearable_after_horizon_probability=after if wearable else None,
-        temperature_model_version=("synthetic-temperature-v1" if temperature else None),
-        temperature_daily_probabilities=(tuple(probabilities) if temperature else None),
-        temperature_after_horizon_probability=after if temperature else None,
+        temperature_model_version=(
+            STAGE_AWARE_TEMPERATURE_BLEND_VERSION if temperature else None
+        ),
+        temperature_daily_probabilities=(
+            tuple(temperature_probabilities) if temperature else None
+        ),
+        temperature_after_horizon_probability=(
+            temperature_after if temperature else None
+        ),
     )
 
 
@@ -228,3 +249,123 @@ def test_empty_journal_has_unresolved_summary() -> None:
     assert summary.mean_cycle_brier_score is None
     assert summary.wearable_completed_cycle_count == 0
     assert summary.temperature_completed_cycle_count == 0
+
+
+@pytest.mark.parametrize(
+    ("history_perfect", "candidate_perfect", "expected_status"),
+    (
+        (False, True, WearablePromotionStatus.PROMOTE),
+        (True, False, WearablePromotionStatus.REJECT),
+    ),
+)
+def test_promotion_review_applies_paired_predeclared_score_rules(
+    *,
+    history_perfect: bool,
+    candidate_perfect: bool,
+    expected_status: WearablePromotionStatus,
+) -> None:
+    """Promote or reject the frozen candidate from three paired cycles."""
+    starts = (
+        date(2025, 1, 1),
+        date(2025, 1, 31),
+        date(2025, 3, 2),
+        date(2025, 4, 1),
+    )
+    history = tuple(
+        CycleHistoryRecord(cycle_start_date=start, period_length_days=5)
+        for start in starts
+    )
+    entries = tuple(
+        _entry(
+            prediction_date=next_start - timedelta(days=1),
+            cycle_start=cycle_start,
+            actual_offset=1,
+            perfect=history_perfect,
+            point_estimate_date=next_start,
+            temperature=True,
+            temperature_perfect=candidate_perfect,
+        )
+        for cycle_start, next_start in pairwise(starts)
+    )
+
+    review = summarize_prospective_performance(
+        entries=entries, history=history
+    ).promotion_review
+
+    assert review.status is expected_status
+    assert review.eligible_cycle_count == 3
+    assert review.paired_forecast_count == 3
+    assert review.cycle_availability_rates == (1.0, 1.0, 1.0)
+    expected_wins = 3 if candidate_perfect else 0
+    assert review.candidate_logarithmic_loss_cycle_wins == expected_wins
+
+
+def test_promotion_review_requires_minimum_candidate_availability() -> None:
+    """Keep a strong but operationally sparse candidate inconclusive."""
+    starts = (
+        date(2025, 1, 1),
+        date(2025, 1, 31),
+        date(2025, 3, 2),
+        date(2025, 4, 1),
+    )
+    history = tuple(
+        CycleHistoryRecord(cycle_start_date=start, period_length_days=5)
+        for start in starts
+    )
+    entries: list[ProspectiveForecastEntry] = []
+    for cycle_start, next_start in pairwise(starts):
+        entries.extend(
+            (
+                _entry(
+                    prediction_date=next_start - timedelta(days=2),
+                    cycle_start=cycle_start,
+                    actual_offset=2,
+                    perfect=False,
+                    point_estimate_date=next_start,
+                ),
+                _entry(
+                    prediction_date=next_start - timedelta(days=1),
+                    cycle_start=cycle_start,
+                    actual_offset=1,
+                    perfect=False,
+                    point_estimate_date=next_start,
+                    temperature=True,
+                    temperature_perfect=True,
+                ),
+            )
+        )
+
+    review = summarize_prospective_performance(
+        entries=tuple(entries), history=history
+    ).promotion_review
+
+    assert review.status is WearablePromotionStatus.INCONCLUSIVE
+    assert review.cycle_availability_rates == (0.5, 0.5, 0.5)
+
+
+def test_promotion_review_waits_for_three_eligible_cycles() -> None:
+    """Report insufficient evidence even when two cycles favor the candidate."""
+    starts = (date(2025, 1, 1), date(2025, 1, 31), date(2025, 3, 2))
+    history = tuple(
+        CycleHistoryRecord(cycle_start_date=start, period_length_days=5)
+        for start in starts
+    )
+    entries = tuple(
+        _entry(
+            prediction_date=next_start - timedelta(days=1),
+            cycle_start=cycle_start,
+            actual_offset=1,
+            perfect=False,
+            point_estimate_date=next_start,
+            temperature=True,
+            temperature_perfect=True,
+        )
+        for cycle_start, next_start in pairwise(starts)
+    )
+
+    review = summarize_prospective_performance(
+        entries=entries, history=history
+    ).promotion_review
+
+    assert review.status is WearablePromotionStatus.INSUFFICIENT_EVIDENCE
+    assert review.eligible_cycle_count == 2
