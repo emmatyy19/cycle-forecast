@@ -156,7 +156,8 @@ snapshots.
 If no newer period has started and the latest period still has an unknown
 duration, the daily check-in asks whether it has ended. Answer yes to enter the
 inclusive number of bleeding days; the existing start is updated atomically
-without creating a duplicate cycle. Answer no while it is still ongoing.
+without creating a duplicate cycle. The prompt rejects a duration that would
+extend beyond the current date. Answer no while it is still ongoing.
 
 The forecast reports the chance of a period starting today and within 3, 7, and
 14 days. It also prints one explicitly labeled longer-range point estimate. That
@@ -167,6 +168,38 @@ strongest evaluated cycle-history probability baseline. Synchronized wearable
 data remains available for local learning and evaluation, but wearable models
 stay explicitly experimental until prospective evidence supports promotion. In
 VS Code, use **Cycle Forecast: Daily** in Run and Debug.
+
+### Encrypted private backup and restore
+
+Create a portable encrypted bundle containing validated cycle history, Oura
+snapshots, and the prospective forecast journal:
+
+```bash
+uv run cycle-forecast private-backup \
+  --history data/raw/cycle_history.csv \
+  --output /Volumes/EncryptedBackup/cycle-forecast.cfbackup
+```
+
+The password is requested twice without echoing. It is never stored, and it
+cannot be recovered by the application, so keep it in a password manager. The
+bundle uses authenticated AES-GCM encryption with a scrypt-derived key. OAuth
+credentials and regenerable model artifacts are deliberately excluded. An
+existing bundle is preserved unless `--replace` is supplied. See the
+[private backup design](docs/design/006-private-backup.md) for the format,
+threat model, and restore guarantees.
+
+To verify and restore the bundle to the standard local paths:
+
+```bash
+uv run cycle-forecast private-restore \
+  --input /Volumes/EncryptedBackup/cycle-forecast.cfbackup
+```
+
+Restore authenticates the complete encrypted bundle, verifies every manifest
+checksum, and validates the cycle history, Oura snapshots, and forecast journal
+before writing. It refuses to replace any existing destination file unless
+`--replace` is supplied explicitly. Restore does not delete extra local
+snapshots that are absent from the bundle.
 
 Before predicting, the daily workflow fingerprints the current history. It
 reuses `artifacts/selected-model.json` when that fingerprint is current and

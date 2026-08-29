@@ -418,7 +418,7 @@ def test_daily_history_check_completes_ongoing_period_duration(
         "cycle_start_date,period_length_days\n2026-07-27,5\n2026-08-24,\n",
         encoding="utf-8",
     )
-    answers = iter(("n", "y", "5", ""))
+    answers = iter(("n", "y", "7", "5", ""))
     prompts: list[str] = []
 
     def answer_prompt(prompt: str) -> str:
@@ -439,6 +439,7 @@ def test_daily_history_check_completes_ongoing_period_duration(
     assert any(
         "Has the period that began 2026-08-24 ended?" in item for item in prompts
     )
+    assert "Please enter a whole number from 1 through 6." in rendered
     assert "Period duration    5 days" in rendered
     assert history_path.read_text(encoding="utf-8").endswith("2026-08-24,5\n")
 
@@ -461,6 +462,107 @@ def test_prediction_error_is_concise_and_nonzero(
     assert status == 2
     assert "Could not make a prediction" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_private_backup_and_restore_commands_round_trip_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Expose encrypted backup and guarded restore through the CLI."""
+    source = tmp_path / "source/history.csv"
+    source.parent.mkdir()
+    source.write_text(
+        "cycle_start_date,period_length_days\n2025-01-01,5\n2025-01-30,\n",
+        encoding="utf-8",
+    )
+    backup = tmp_path / "private.cfbackup"
+    passwords = iter(("synthetic-test-password", "synthetic-test-password"))
+
+    def backup_password(_: str) -> str:
+        """Return matching invented backup passwords."""
+        return next(passwords)
+
+    monkeypatch.setattr(cli.getpass, "getpass", backup_password)
+
+    backup_status = main(
+        (
+            "private-backup",
+            "--history",
+            str(source),
+            "--snapshot-dir",
+            str(tmp_path / "missing-snapshots"),
+            "--journal",
+            str(tmp_path / "missing-journal.jsonl"),
+            "--output",
+            str(backup),
+        )
+    )
+
+    assert backup_status == 0
+
+    def restore_password(_: str) -> str:
+        """Return the invented restore password."""
+        return "synthetic-test-password"
+
+    monkeypatch.setattr(cli.getpass, "getpass", restore_password)
+    destination = tmp_path / "restored/history.csv"
+    restore_status = main(
+        (
+            "private-restore",
+            "--input",
+            str(backup),
+            "--history",
+            str(destination),
+            "--snapshot-dir",
+            str(tmp_path / "restored/snapshots"),
+            "--journal",
+            str(tmp_path / "restored/journal.jsonl"),
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert restore_status == 0
+    assert "OAuth credentials       excluded" in captured.out
+    assert "verified and restored" in captured.out
+    assert destination.read_bytes() == source.read_bytes()
+
+
+def test_private_backup_command_rejects_password_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report mismatched hidden password prompts without creating a bundle."""
+    history = tmp_path / "history.csv"
+    history.write_text(
+        "cycle_start_date,period_length_days\n2025-01-01,5\n2025-01-30,\n",
+        encoding="utf-8",
+    )
+    passwords = iter(("first-test-password", "second-test-password"))
+
+    def mismatched_passwords(_: str) -> str:
+        """Return two different invented passwords."""
+        return next(passwords)
+
+    monkeypatch.setattr(cli.getpass, "getpass", mismatched_passwords)
+    output = tmp_path / "private.cfbackup"
+
+    status = main(
+        (
+            "private-backup",
+            "--history",
+            str(history),
+            "--output",
+            str(output),
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert status == 2
+    assert "Could not create a private backup" in captured.err
+    assert "passwords do not match" in captured.err
+    assert not output.exists()
 
 
 def test_first_oura_sync_requires_an_explicit_start_date(

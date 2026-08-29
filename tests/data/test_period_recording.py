@@ -70,6 +70,23 @@ def test_complete_existing_pending_period_without_duplicate(tmp_path: Path) -> N
     assert load_cycle_history(path=history_path)[0].period_length_days == 5
 
 
+def test_reject_period_duration_beyond_recording_date(tmp_path: Path) -> None:
+    """Prevent a duration from claiming bleeding days that have not occurred."""
+    history_path = tmp_path / "history.csv"
+    original = "cycle_start_date,period_length_days\n2025-01-01,\n"
+    history_path.write_text(original, encoding="utf-8")
+
+    with pytest.raises(PeriodRecordingError, match="maximum 5 days"):
+        record_period_start(
+            history_path=history_path,
+            cycle_start_date=date(2025, 1, 1),
+            recorded_on=date(2025, 1, 5),
+            period_length_days=6,
+        )
+
+    assert history_path.read_text(encoding="utf-8") == original
+
+
 @pytest.mark.parametrize(
     ("start", "recorded_on", "previous_length", "message"),
     [
