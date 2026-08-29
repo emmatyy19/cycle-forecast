@@ -15,18 +15,24 @@ from cycle_forecast.features.wearable import (
 )
 from cycle_forecast.forecasting.daily import DailyPeriodDistribution
 from cycle_forecast.forecasting.wearable_baselines import (
+    HISTORY_TEMPERATURE_BLEND_VERSION,
     WEARABLE_NEIGHBOR_BASELINE_VERSION,
+    blend_history_with_temperature,
+    forecast_with_empirical_cycle_hazard,
+    forecast_with_temperature_neighbors,
     forecast_with_wearable_neighbors,
 )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class WearableDailyPrediction:
-    """Contain one experimental cutoff-safe wearable forecast."""
+    """Contain full-wearable and history-temperature shadow forecasts."""
 
     model_version: str
     training_morning_count: int
     distribution: DailyPeriodDistribution
+    temperature_model_version: str
+    temperature_distribution: DailyPeriodDistribution
 
 
 def predict_daily_with_wearable_neighbors(
@@ -84,13 +90,34 @@ def predict_daily_with_wearable_neighbors(
         next_cycle_start=None,
         observed_through=prediction_date,
     )
+    training = tuple(training_rows)
     distribution = forecast_with_wearable_neighbors(
         row=current_row,
-        training_rows=tuple(training_rows),
+        training_rows=training,
         neighbor_count=neighbor_count,
+    )
+    temperature_ablation = forecast_with_temperature_neighbors(
+        row=current_row,
+        training_rows=training,
+        neighbor_count=neighbor_count,
+    )
+    completed_cycle_lengths = tuple(
+        (following.cycle_start_date - prior.cycle_start_date).days
+        for prior, following in pairwise(history)
+        if following.cycle_start_date <= current_row.aligned.cycle_start_date
+    )
+    history_distribution = forecast_with_empirical_cycle_hazard(
+        row=current_row,
+        completed_cycle_lengths=completed_cycle_lengths,
+    )
+    temperature_distribution = blend_history_with_temperature(
+        history=history_distribution,
+        temperature=temperature_ablation,
     )
     return WearableDailyPrediction(
         model_version=WEARABLE_NEIGHBOR_BASELINE_VERSION,
         training_morning_count=len(training_rows),
         distribution=distribution,
+        temperature_model_version=HISTORY_TEMPERATURE_BLEND_VERSION,
+        temperature_distribution=temperature_distribution,
     )

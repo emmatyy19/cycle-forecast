@@ -21,7 +21,7 @@ from cycle_forecast.forecasting.daily import (
 )
 from cycle_forecast.prediction_daily import DailyPointEstimate, HistoryDailyPrediction
 
-PROSPECTIVE_JOURNAL_SCHEMA_VERSION: Final = "prospective-forecast-journal-v2"
+PROSPECTIVE_JOURNAL_SCHEMA_VERSION: Final = "prospective-forecast-journal-v3"
 """Version of immutable forecast entries and delayed scoring semantics."""
 
 DEFAULT_PROSPECTIVE_JOURNAL_PATH: Final = Path("data/private/forecast-journal.jsonl")
@@ -42,10 +42,15 @@ _V1_ENTRY_FIELDS: Final[set[str]] = {
     "model_dataset_fingerprint",
     "oura_synced_through",
 }
-_ENTRY_FIELDS: Final[set[str]] = _V1_ENTRY_FIELDS | {
+_V2_ENTRY_FIELDS: Final[set[str]] = _V1_ENTRY_FIELDS | {
     "wearable_model_version",
     "wearable_daily_probabilities",
     "wearable_after_horizon_probability",
+}
+_ENTRY_FIELDS: Final[set[str]] = _V2_ENTRY_FIELDS | {
+    "temperature_model_version",
+    "temperature_daily_probabilities",
+    "temperature_after_horizon_probability",
 }
 
 
@@ -73,6 +78,9 @@ class ProspectiveForecastEntry:
     wearable_model_version: str | None = None
     wearable_daily_probabilities: tuple[float, ...] | None = None
     wearable_after_horizon_probability: float | None = None
+    temperature_model_version: str | None = None
+    temperature_daily_probabilities: tuple[float, ...] | None = None
+    temperature_after_horizon_probability: float | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -91,6 +99,11 @@ class ProspectivePerformanceSummary:
     wearable_mean_cycle_logarithmic_loss: float | None
     wearable_mean_cycle_brier_score: float | None
     wearable_mean_cycle_window_brier_scores: dict[int, float]
+    temperature_resolved_forecast_count: int
+    temperature_completed_cycle_count: int
+    temperature_mean_cycle_logarithmic_loss: float | None
+    temperature_mean_cycle_brier_score: float | None
+    temperature_mean_cycle_window_brier_scores: dict[int, float]
 
 
 def build_prospective_entry(
@@ -101,6 +114,8 @@ def build_prospective_entry(
     oura_synced_through: date,
     wearable_model_version: str | None = None,
     wearable_distribution: DailyPeriodDistribution | None = None,
+    temperature_model_version: str | None = None,
+    temperature_distribution: DailyPeriodDistribution | None = None,
 ) -> ProspectiveForecastEntry:
     """Build a versioned journal entry from the completed daily forecast."""
     return ProspectiveForecastEntry(
@@ -128,6 +143,17 @@ def build_prospective_entry(
             if wearable_distribution is not None
             else None
         ),
+        temperature_model_version=temperature_model_version,
+        temperature_daily_probabilities=(
+            temperature_distribution.daily_probabilities
+            if temperature_distribution is not None
+            else None
+        ),
+        temperature_after_horizon_probability=(
+            temperature_distribution.after_horizon_probability
+            if temperature_distribution is not None
+            else None
+        ),
     )
 
 
@@ -136,6 +162,9 @@ def _serialize_entry(*, entry: ProspectiveForecastEntry) -> bytes:
     payload = asdict(entry)
     if entry.schema_version == "prospective-forecast-journal-v1":
         for field in _ENTRY_FIELDS - _V1_ENTRY_FIELDS:
+            del payload[field]
+    elif entry.schema_version == "prospective-forecast-journal-v2":
+        for field in _ENTRY_FIELDS - _V2_ENTRY_FIELDS:
             del payload[field]
     return (
         json.dumps(payload, default=str, separators=(",", ":"), sort_keys=True) + "\n"
@@ -154,6 +183,8 @@ def _entry_from_object(*, value: object, line_number: int) -> ProspectiveForecas
         expected_fields = (
             _V1_ENTRY_FIELDS
             if schema_version == "prospective-forecast-journal-v1"
+            else _V2_ENTRY_FIELDS
+            if schema_version == "prospective-forecast-journal-v2"
             else _ENTRY_FIELDS
         )
         if (
@@ -163,6 +194,7 @@ def _entry_from_object(*, value: object, line_number: int) -> ProspectiveForecas
             raise ValueError("entry fields do not match the journal schema")
         if schema_version not in {
             "prospective-forecast-journal-v1",
+            "prospective-forecast-journal-v2",
             PROSPECTIVE_JOURNAL_SCHEMA_VERSION,
         }:
             raise ValueError("unsupported schema version")
@@ -200,6 +232,29 @@ def _entry_from_object(*, value: object, line_number: int) -> ProspectiveForecas
             wearable_items
         ):
             raise ValueError("wearable daily probabilities must be numeric")
+        temperature_probabilities_raw = payload.get("temperature_daily_probabilities")
+        if temperature_probabilities_raw is not None and not isinstance(
+            temperature_probabilities_raw, list
+        ):
+            raise ValueError("temperature daily probabilities must be an array")
+        temperature_items = (
+            cast(list[object], temperature_probabilities_raw)
+            if temperature_probabilities_raw is not None
+            else None
+        )
+        temperature_probabilities = (
+            tuple(
+                float(item)
+                for item in temperature_items
+                if isinstance(item, (int, float)) and not isinstance(item, bool)
+            )
+            if temperature_items is not None
+            else None
+        )
+        if temperature_items is not None and len(
+            temperature_probabilities or ()
+        ) != len(temperature_items):
+            raise ValueError("temperature daily probabilities must be numeric")
         entry = ProspectiveForecastEntry(
             schema_version=str(schema_version),
             prediction_date=date.fromisoformat(str(payload["prediction_date"])),
@@ -229,6 +284,17 @@ def _entry_from_object(*, value: object, line_number: int) -> ProspectiveForecas
                 if payload.get("wearable_after_horizon_probability") is not None
                 else None
             ),
+            temperature_model_version=(
+                str(payload["temperature_model_version"])
+                if payload.get("temperature_model_version") is not None
+                else None
+            ),
+            temperature_daily_probabilities=temperature_probabilities,
+            temperature_after_horizon_probability=(
+                float(str(payload["temperature_after_horizon_probability"]))
+                if payload.get("temperature_after_horizon_probability") is not None
+                else None
+            ),
         )
         DailyPeriodDistribution(
             prediction_date=entry.prediction_date,
@@ -243,6 +309,15 @@ def _entry_from_object(*, value: object, line_number: int) -> ProspectiveForecas
                 daily_probabilities=entry.wearable_daily_probabilities,
                 after_horizon_probability=cast(
                     float, entry.wearable_after_horizon_probability
+                ),
+            )
+        if entry.temperature_daily_probabilities is not None:
+            DailyPeriodDistribution(
+                prediction_date=entry.prediction_date,
+                prediction_cutoff=entry.prediction_cutoff,
+                daily_probabilities=entry.temperature_daily_probabilities,
+                after_horizon_probability=cast(
+                    float, entry.temperature_after_horizon_probability
                 ),
             )
     except (KeyError, TypeError, ValueError) as error:
@@ -269,6 +344,14 @@ def _entry_from_object(*, value: object, line_number: int) -> ProspectiveForecas
         or (
             (entry.wearable_model_version is None)
             != (entry.wearable_after_horizon_probability is None)
+        )
+        or (
+            (entry.temperature_model_version is None)
+            != (entry.temperature_daily_probabilities is None)
+        )
+        or (
+            (entry.temperature_model_version is None)
+            != (entry.temperature_after_horizon_probability is None)
         )
     ):
         raise ProspectiveJournalError(
@@ -376,7 +459,9 @@ def summarize_prospective_performance(
     cycle_evaluations: list[DailyForecastEvaluation] = []
     cycle_point_errors: list[float] = []
     wearable_cycle_evaluations: list[DailyForecastEvaluation] = []
+    temperature_cycle_evaluations: list[DailyForecastEvaluation] = []
     wearable_resolved_count = 0
+    temperature_resolved_count = 0
     resolved_count = 0
     for cycle_start, cycle_entries in grouped.items():
         next_start = next_starts[cycle_start]
@@ -426,6 +511,35 @@ def summarize_prospective_performance(
                 )
             )
             wearable_resolved_count += len(wearable_entries)
+        temperature_entries = tuple(
+            entry
+            for entry in cycle_entries
+            if entry.temperature_daily_probabilities is not None
+        )
+        if temperature_entries:
+            temperature_cycle_evaluations.append(
+                evaluate_daily_distributions(
+                    forecasts=tuple(
+                        DailyPeriodDistribution(
+                            prediction_date=entry.prediction_date,
+                            prediction_cutoff=entry.prediction_cutoff,
+                            daily_probabilities=cast(
+                                tuple[float, ...],
+                                entry.temperature_daily_probabilities,
+                            ),
+                            after_horizon_probability=cast(
+                                float, entry.temperature_after_horizon_probability
+                            ),
+                        )
+                        for entry in temperature_entries
+                    ),
+                    outcome_offsets=tuple(
+                        (next_start - entry.prediction_date).days
+                        for entry in temperature_entries
+                    ),
+                )
+            )
+            temperature_resolved_count += len(temperature_entries)
         cycle_point_errors.append(
             sum(
                 abs((entry.point_estimate_date - next_start).days)
@@ -449,8 +563,14 @@ def summarize_prospective_performance(
             wearable_mean_cycle_logarithmic_loss=None,
             wearable_mean_cycle_brier_score=None,
             wearable_mean_cycle_window_brier_scores={},
+            temperature_resolved_forecast_count=0,
+            temperature_completed_cycle_count=0,
+            temperature_mean_cycle_logarithmic_loss=None,
+            temperature_mean_cycle_brier_score=None,
+            temperature_mean_cycle_window_brier_scores={},
         )
     wearable_cycle_count = len(wearable_cycle_evaluations)
+    temperature_cycle_count = len(temperature_cycle_evaluations)
     return ProspectivePerformanceSummary(
         journal_forecast_count=len(entries),
         resolved_forecast_count=resolved_count,
@@ -496,6 +616,32 @@ def summarize_prospective_performance(
                 for window in CALIBRATION_WINDOWS
             }
             if wearable_cycle_count
+            else {}
+        ),
+        temperature_resolved_forecast_count=temperature_resolved_count,
+        temperature_completed_cycle_count=temperature_cycle_count,
+        temperature_mean_cycle_logarithmic_loss=(
+            sum(item.logarithmic_loss for item in temperature_cycle_evaluations)
+            / temperature_cycle_count
+            if temperature_cycle_count
+            else None
+        ),
+        temperature_mean_cycle_brier_score=(
+            sum(item.multiclass_brier_score for item in temperature_cycle_evaluations)
+            / temperature_cycle_count
+            if temperature_cycle_count
+            else None
+        ),
+        temperature_mean_cycle_window_brier_scores=(
+            {
+                window: sum(
+                    item.window_brier_scores[window]
+                    for item in temperature_cycle_evaluations
+                )
+                / temperature_cycle_count
+                for window in CALIBRATION_WINDOWS
+            }
+            if temperature_cycle_count
             else {}
         ),
     )

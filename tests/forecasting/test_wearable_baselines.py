@@ -7,12 +7,16 @@ import pytest
 from cycle_forecast.data.wearable_alignment import AlignedDailyObservation
 from cycle_forecast.features.wearable import WEARABLE_FEATURE_NAMES, WearableFeatureRow
 from cycle_forecast.forecasting.wearable_baselines import (
+    blend_history_with_temperature,
     forecast_with_empirical_cycle_hazard,
+    forecast_with_temperature_neighbors,
     forecast_with_wearable_neighbors,
 )
 
 
-def _row(*, index: int, outcome: int | None, signal: float) -> WearableFeatureRow:
+def _row(
+    *, index: int, outcome: int | None, signal: float, temperature: float | None = None
+) -> WearableFeatureRow:
     """Create one invented chronological wearable row."""
     prediction_date = date(2025, 1, 1) + timedelta(days=index)
     return WearableFeatureRow(
@@ -24,7 +28,19 @@ def _row(*, index: int, outcome: int | None, signal: float) -> WearableFeatureRo
             oura=None,
         ),
         feature_names=WEARABLE_FEATURE_NAMES,
-        values=(float(13 + index), signal, 0.0, 80.0, 40.0, 25_000.0, 0, 1, 0, 0, 0),
+        values=(
+            float(13 + index),
+            signal,
+            temperature or 0.0,
+            80.0,
+            40.0,
+            25_000.0,
+            0,
+            float(temperature is None),
+            0,
+            0,
+            0,
+        ),
         outcome_offset_days=outcome,
     )
 
@@ -61,6 +77,62 @@ def test_neighbor_baseline_uses_only_earlier_labeled_rows() -> None:
     assert forecast.daily_probabilities[2] > forecast.daily_probabilities[0]
 
 
+def test_temperature_ablation_uses_temperature_but_not_other_wearable_values() -> None:
+    """Select a temperature match despite an opposing readiness-score match."""
+    current = _row(index=3, outcome=None, signal=10.0, temperature=0.4)
+    forecast = forecast_with_temperature_neighbors(
+        row=current,
+        training_rows=(
+            _row(index=0, outcome=1, signal=10.0, temperature=-0.4),
+            _row(index=1, outcome=4, signal=90.0, temperature=0.4),
+        ),
+        neighbor_count=1,
+    )
+
+    assert forecast.daily_probabilities[4] > forecast.daily_probabilities[1]
+
+
+def test_history_temperature_blend_preserves_history_as_dominant_signal() -> None:
+    """Pool temperature evidence without allowing it to replace history."""
+    current = _row(index=3, outcome=None, signal=10.0, temperature=0.4)
+    history = forecast_with_empirical_cycle_hazard(
+        row=current,
+        completed_cycle_lengths=(27, 28, 29, 30),
+    )
+    temperature = forecast_with_temperature_neighbors(
+        row=current,
+        training_rows=(_row(index=0, outcome=1, signal=10.0, temperature=0.4),),
+        neighbor_count=1,
+    )
+
+    blended = blend_history_with_temperature(
+        history=history,
+        temperature=temperature,
+    )
+
+    assert blended.daily_probabilities[1] == pytest.approx(
+        0.75 * history.daily_probabilities[1]
+        + 0.25 * temperature.daily_probabilities[1]
+    )
+    assert sum(
+        (*blended.daily_probabilities, blended.after_horizon_probability)
+    ) == pytest.approx(1.0)
+    with pytest.raises(ValueError, match="share one context"):
+        blend_history_with_temperature(
+            history=history,
+            temperature=forecast_with_empirical_cycle_hazard(
+                row=_row(index=4, outcome=None, signal=10.0, temperature=0.4),
+                completed_cycle_lengths=(27, 28, 29, 30),
+            ),
+        )
+    with pytest.raises(ValueError, match="between zero and one"):
+        blend_history_with_temperature(
+            history=history,
+            temperature=temperature,
+            temperature_weight=1.1,
+        )
+
+
 def test_baselines_reject_insufficient_or_invalid_configuration() -> None:
     """Fail clearly when empirical evidence or settings are unusable."""
     current = _row(index=2, outcome=None, signal=80.0)
@@ -72,6 +144,8 @@ def test_baselines_reject_insufficient_or_invalid_configuration() -> None:
         )
     with pytest.raises(ValueError, match="earlier labeled"):
         forecast_with_wearable_neighbors(row=current, training_rows=())
+    with pytest.raises(ValueError, match="earlier labeled"):
+        forecast_with_temperature_neighbors(row=current, training_rows=())
     with pytest.raises(ValueError, match="must be positive"):
         forecast_with_wearable_neighbors(
             row=current,

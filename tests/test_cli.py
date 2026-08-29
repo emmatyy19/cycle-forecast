@@ -59,6 +59,16 @@ def _resolved_prospective_summary(**_: object) -> ProspectivePerformanceSummary:
             7: 0.3,
             14: 0.4,
         },
+        temperature_resolved_forecast_count=10,
+        temperature_completed_cycle_count=2,
+        temperature_mean_cycle_logarithmic_loss=0.45,
+        temperature_mean_cycle_brier_score=0.25,
+        temperature_mean_cycle_window_brier_scores={
+            1: 0.1,
+            3: 0.2,
+            7: 0.3,
+            14: 0.4,
+        },
     )
 
 
@@ -298,6 +308,13 @@ def test_daily_flow_syncs_checks_history_and_forecasts(
                 daily_probabilities=(0.01,) * 15,
                 after_horizon_probability=0.85,
             ),
+            temperature_model_version="history-temperature-blend-v1",
+            temperature_distribution=DailyPeriodDistribution(
+                prediction_date=prediction_date,
+                prediction_cutoff=prediction_cutoff,
+                daily_probabilities=(0.02,) * 15,
+                after_horizon_probability=0.7,
+            ),
         )
 
     monkeypatch.setattr(cli, "sync_oura", sync)
@@ -343,14 +360,17 @@ def test_daily_flow_syncs_checks_history_and_forecasts(
     assert "Naive median of completed cycle lengths" in captured.out
     assert "EXPERIMENTAL WEARABLE SHADOW" in captured.out
     assert "Wearable nearest neighbors" in captured.out
+    assert "Cycle history + temperature" in captured.out
     assert "Training mornings       42" in captured.out
     assert "PROSPECTIVE JOURNAL" in captured.out
     assert "PAIRED SHADOW COMPARISON" in captured.out
     assert "Wearable log loss       0.500" in captured.out
+    assert "History + temp log loss 0.450" in captured.out
     journal_path = tmp_path / "forecast-journal.jsonl"
     assert journal_path.is_file()
     journal_entry = json.loads(journal_path.read_text(encoding="utf-8"))
     assert journal_entry["wearable_model_version"] == "wearable-neighbor-v1"
+    assert journal_entry["temperature_model_version"] == "history-temperature-blend-v1"
 
 
 def test_prediction_error_is_concise_and_nonzero(

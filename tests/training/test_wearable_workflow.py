@@ -131,8 +131,10 @@ def test_exploratory_backfill_compares_all_forecasters_by_complete_cycle(
         1,
         2,
     )
-    assert len(result.walk_forward.entries) == 3
-    assert len(result.diagnostics.candidates) == 3
+    assert len(result.walk_forward.entries) == 5
+    assert len(result.diagnostics.candidates) == 5
+    assert result.walk_forward.entries[1].label == "Cycle history plus temperature"
+    assert result.walk_forward.entries[2].label == "Temperature ablation"
     assert set(result.diagnostics.data.missingness_rates) == {
         "Readiness score",
         "Temperature",
