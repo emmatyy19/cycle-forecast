@@ -32,8 +32,10 @@ from cycle_forecast.forecasting.daily import (
 )
 from cycle_forecast.forecasting.wearable_baselines import (
     EMPIRICAL_HAZARD_BASELINE_VERSION,
+    HISTORY_TEMPERATURE_BLEND_VERSION,
     TEMPERATURE_NEIGHBOR_BASELINE_VERSION,
     WEARABLE_NEIGHBOR_BASELINE_VERSION,
+    blend_history_with_temperature,
     forecast_with_empirical_cycle_hazard,
     forecast_with_temperature_neighbors,
     forecast_with_wearable_neighbors,
@@ -45,11 +47,12 @@ from cycle_forecast.models.discrete_survival import (
     predict_with_discrete_survival_model,
 )
 
-WEARABLE_EVALUATION_WORKFLOW_VERSION: Final = "wearable-evaluation-v3"
+WEARABLE_EVALUATION_WORKFLOW_VERSION: Final = "wearable-evaluation-v4"
 """Semantic version of local assembly, temporal partitioning, and comparison."""
 
 HISTORY_BASELINE_LABEL: Final = "Empirical cycle hazard"
-TEMPERATURE_BASELINE_LABEL: Final = "Temperature nearest neighbors"
+HISTORY_TEMPERATURE_LABEL: Final = "Cycle history plus temperature"
+TEMPERATURE_BASELINE_LABEL: Final = "Temperature ablation"
 WEARABLE_BASELINE_LABEL: Final = "Wearable nearest neighbors"
 SURVIVAL_MODEL_LABEL: Final = "Calibrated discrete survival"
 
@@ -538,6 +541,14 @@ def _evaluate_fold(
         )
         for row in evaluation
     )
+    history_temperature_forecasts = tuple(
+        blend_history_with_temperature(history=history, temperature=temperature)
+        for history, temperature in zip(
+            history_forecasts,
+            temperature_forecasts,
+            strict=True,
+        )
+    )
     model_forecasts = tuple(
         predict_with_discrete_survival_model(model=model, row=row) for row in evaluation
     )
@@ -552,6 +563,12 @@ def _evaluate_fold(
                 label=HISTORY_BASELINE_LABEL,
                 version=EMPIRICAL_HAZARD_BASELINE_VERSION,
                 forecasts=history_forecasts,
+                outcome_offsets=outcomes,
+            ),
+            DailyForecastCandidate(
+                label=HISTORY_TEMPERATURE_LABEL,
+                version=HISTORY_TEMPERATURE_BLEND_VERSION,
+                forecasts=history_temperature_forecasts,
                 outcome_offsets=outcomes,
             ),
             DailyForecastCandidate(
@@ -593,6 +610,11 @@ def _evaluate_fold(
                     HISTORY_BASELINE_LABEL,
                     EMPIRICAL_HAZARD_BASELINE_VERSION,
                     history_forecasts,
+                ),
+                (
+                    HISTORY_TEMPERATURE_LABEL,
+                    HISTORY_TEMPERATURE_BLEND_VERSION,
+                    history_temperature_forecasts,
                 ),
                 (
                     TEMPERATURE_BASELINE_LABEL,

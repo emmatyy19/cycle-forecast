@@ -308,7 +308,7 @@ def test_daily_flow_syncs_checks_history_and_forecasts(
                 daily_probabilities=(0.01,) * 15,
                 after_horizon_probability=0.85,
             ),
-            temperature_model_version="temperature-neighbor-v1",
+            temperature_model_version="history-temperature-blend-v1",
             temperature_distribution=DailyPeriodDistribution(
                 prediction_date=prediction_date,
                 prediction_cutoff=prediction_cutoff,
@@ -360,17 +360,17 @@ def test_daily_flow_syncs_checks_history_and_forecasts(
     assert "Naive median of completed cycle lengths" in captured.out
     assert "EXPERIMENTAL WEARABLE SHADOW" in captured.out
     assert "Wearable nearest neighbors" in captured.out
-    assert "Cycle day + temperature" in captured.out
+    assert "Cycle history + temperature" in captured.out
     assert "Training mornings       42" in captured.out
     assert "PROSPECTIVE JOURNAL" in captured.out
     assert "PAIRED SHADOW COMPARISON" in captured.out
     assert "Wearable log loss       0.500" in captured.out
-    assert "Temperature log loss    0.450" in captured.out
+    assert "History + temp log loss 0.450" in captured.out
     journal_path = tmp_path / "forecast-journal.jsonl"
     assert journal_path.is_file()
     journal_entry = json.loads(journal_path.read_text(encoding="utf-8"))
     assert journal_entry["wearable_model_version"] == "wearable-neighbor-v1"
-    assert journal_entry["temperature_model_version"] == "temperature-neighbor-v1"
+    assert journal_entry["temperature_model_version"] == "history-temperature-blend-v1"
 
 
 def test_prediction_error_is_concise_and_nonzero(

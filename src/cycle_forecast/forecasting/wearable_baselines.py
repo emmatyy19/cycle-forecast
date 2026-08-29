@@ -21,6 +21,12 @@ WEARABLE_NEIGHBOR_BASELINE_VERSION: Final = "wearable-neighbor-v1"
 TEMPERATURE_NEIGHBOR_BASELINE_VERSION: Final = "temperature-neighbor-v1"
 """Version of the cycle-day and temperature-only neighbor ablation."""
 
+HISTORY_TEMPERATURE_BLEND_VERSION: Final = "history-temperature-blend-v1"
+"""Version of the conservative history-prior and temperature linear pool."""
+
+TEMPERATURE_BLEND_WEIGHT: Final = 0.25
+"""Predeclared temperature share that preserves history as the dominant signal."""
+
 
 def forecast_with_empirical_cycle_hazard(
     *,
@@ -292,4 +298,59 @@ def forecast_with_temperature_neighbors(
         neighbors=neighbors,
         row=row,
         smoothing=smoothing,
+    )
+
+
+def blend_history_with_temperature(
+    *,
+    history: DailyPeriodDistribution,
+    temperature: DailyPeriodDistribution,
+    temperature_weight: float = TEMPERATURE_BLEND_WEIGHT,
+) -> DailyPeriodDistribution:
+    """Conservatively update a history forecast with temperature evidence.
+
+    Parameters
+    ----------
+    history
+        Official cycle-history probability distribution used as the prior.
+    temperature
+        Distribution from the cycle-day and temperature ablation.
+    temperature_weight
+        Temperature share of the linear probability pool. The default keeps
+        three quarters of every probability assigned by cycle history.
+
+    Returns
+    -------
+    DailyPeriodDistribution
+        Exhaustive hybrid distribution for the shared prediction context.
+
+    Raises
+    ------
+    ValueError
+        If the distributions do not share a context or the weight is invalid.
+    """
+    if (
+        history.prediction_date != temperature.prediction_date
+        or history.prediction_cutoff != temperature.prediction_cutoff
+    ):
+        raise ValueError("history and temperature forecasts must share one context")
+    if not 0.0 <= temperature_weight <= 1.0:
+        raise ValueError("temperature_weight must be between zero and one")
+    history_weight = 1.0 - temperature_weight
+    return DailyPeriodDistribution(
+        prediction_date=history.prediction_date,
+        prediction_cutoff=history.prediction_cutoff,
+        daily_probabilities=tuple(
+            history_weight * history_probability
+            + temperature_weight * temperature_probability
+            for history_probability, temperature_probability in zip(
+                history.daily_probabilities,
+                temperature.daily_probabilities,
+                strict=True,
+            )
+        ),
+        after_horizon_probability=(
+            history_weight * history.after_horizon_probability
+            + temperature_weight * temperature.after_horizon_probability
+        ),
     )

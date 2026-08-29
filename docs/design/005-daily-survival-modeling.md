@@ -42,6 +42,15 @@ candidate. Comparing it with the history baseline measures whether temperature
 adds value beyond cycle timing; comparing it with the full wearable baseline
 measures whether the other allowlisted signals add value beyond temperature.
 
+The operational history-plus-temperature candidate forms a fixed linear pool
+of the empirical cycle-history distribution and the temperature-ablation
+distribution. Cycle history retains 75% of every outcome probability and
+temperature receives 25%. This predeclared conservative weight is not tuned on
+evaluation cycles: temperature can adjust the forecast, while weak or noisy
+temperature evidence cannot replace the stronger history signal. The raw
+temperature ablation remains visible in development evaluation to distinguish
+the temperature signal from the benefit of shrinkage toward history.
+
 ## Model and calibration
 
 The first Phase B model is discrete-time logistic survival regression. Training
@@ -102,7 +111,8 @@ is represented as offset 15 for offset-error summaries. These diagnostic
 aggregates describe mornings, while the headline model scores continue to give
 each evaluation cycle equal weight. Per-cycle tables rank every candidate and
 omit the private cycle dates. This contract is versioned as
-`wearable-evaluation-v3` after adding the temperature ablation.
+`wearable-evaluation-v4` after adding the conservative history-plus-temperature
+candidate.
 
 ## Operational daily forecast
 
@@ -124,10 +134,11 @@ official forecast.
 
 The daily workflow also runs the wearable nearest-neighbor candidate in shadow
 mode from the same cutoff as the official history forecast. It labels this
-output experimental and runs the temperature ablation from the same resolved
-mornings. It journals all exhaustive distributions together and reports
-delayed, equal-cycle scores after outcomes arrive. Missing or insufficient
-wearable input never prevents the official forecast.
+output experimental and combines the official history distribution with the
+temperature ablation using the fixed conservative pool. It journals the
+history, history-plus-temperature, and full-wearable distributions together
+and reports delayed, equal-cycle scores after outcomes arrive. Missing or
+insufficient wearable input never prevents the official forecast.
 
 For longer-range convenience, the same report includes one separately labeled
 point estimate. It prefers the selected packaged Phase A model and otherwise

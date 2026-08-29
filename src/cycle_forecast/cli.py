@@ -696,7 +696,7 @@ def _render_wearable_shadow(
             file=output,
         )
     temperature = prediction.temperature_distribution
-    print(f"\n  {'Temperature ablation':<24}Cycle day + temperature", file=output)
+    print(f"\n  {'Hybrid candidate':<24}Cycle history + temperature", file=output)
     print(f"  {'Version':<24}{prediction.temperature_model_version}", file=output)
     print(
         f"  {'Today':<24}{temperature.probability_within(days=1):.1%}",
@@ -780,27 +780,28 @@ def _render_prospective_performance(
         assert summary.temperature_mean_cycle_logarithmic_loss is not None
         assert summary.temperature_mean_cycle_brier_score is not None
         print(
-            f"  {'Temperature resolved':<24}"
+            f"  {'History + temp resolved':<24}"
             f"{summary.temperature_resolved_forecast_count}",
             file=output,
         )
         print(
-            f"  {'Temperature cycles':<24}{summary.temperature_completed_cycle_count}",
+            f"  {'History + temp cycles':<24}"
+            f"{summary.temperature_completed_cycle_count}",
             file=output,
         )
         print(
-            f"  {'Temperature log loss':<24}"
+            f"  {'History + temp log loss':<24}"
             f"{summary.temperature_mean_cycle_logarithmic_loss:.3f}",
             file=output,
         )
         print(
-            f"  {'Temperature Brier':<24}"
+            f"  {'History + temp Brier':<24}"
             f"{summary.temperature_mean_cycle_brier_score:.3f}",
             file=output,
         )
     else:
         print(
-            "  Temperature comparison  Waiting for a completed shadow cycle",
+            "  History + temp          Waiting for a completed shadow cycle",
             file=output,
         )
 
@@ -1130,7 +1131,8 @@ def _render_wearable_evaluation(
 
     label_aliases = {
         "Empirical cycle hazard": "Cycle history",
-        "Temperature nearest neighbors": "Temperature only",
+        "Cycle history plus temperature": "History + temperature",
+        "Temperature ablation": "Temperature ablation",
         "Wearable nearest neighbors": "Wearable neighbors",
         "Calibrated discrete survival": "Survival model",
     }
@@ -1179,7 +1181,8 @@ def _render_wearable_evaluation(
     print("\nPER-CYCLE EXACT-DATE BRIER", file=output)
     score_headers = {
         "Empirical cycle hazard": "History",
-        "Temperature nearest neighbors": "Temp",
+        "Cycle history plus temperature": "Hist+temp",
+        "Temperature ablation": "Temp test",
         "Wearable nearest neighbors": "Neighbor",
         "Calibrated discrete survival": "Survival",
     }

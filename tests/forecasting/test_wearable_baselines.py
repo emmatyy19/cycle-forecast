@@ -7,6 +7,7 @@ import pytest
 from cycle_forecast.data.wearable_alignment import AlignedDailyObservation
 from cycle_forecast.features.wearable import WEARABLE_FEATURE_NAMES, WearableFeatureRow
 from cycle_forecast.forecasting.wearable_baselines import (
+    blend_history_with_temperature,
     forecast_with_empirical_cycle_hazard,
     forecast_with_temperature_neighbors,
     forecast_with_wearable_neighbors,
@@ -89,6 +90,47 @@ def test_temperature_ablation_uses_temperature_but_not_other_wearable_values() -
     )
 
     assert forecast.daily_probabilities[4] > forecast.daily_probabilities[1]
+
+
+def test_history_temperature_blend_preserves_history_as_dominant_signal() -> None:
+    """Pool temperature evidence without allowing it to replace history."""
+    current = _row(index=3, outcome=None, signal=10.0, temperature=0.4)
+    history = forecast_with_empirical_cycle_hazard(
+        row=current,
+        completed_cycle_lengths=(27, 28, 29, 30),
+    )
+    temperature = forecast_with_temperature_neighbors(
+        row=current,
+        training_rows=(_row(index=0, outcome=1, signal=10.0, temperature=0.4),),
+        neighbor_count=1,
+    )
+
+    blended = blend_history_with_temperature(
+        history=history,
+        temperature=temperature,
+    )
+
+    assert blended.daily_probabilities[1] == pytest.approx(
+        0.75 * history.daily_probabilities[1]
+        + 0.25 * temperature.daily_probabilities[1]
+    )
+    assert sum(
+        (*blended.daily_probabilities, blended.after_horizon_probability)
+    ) == pytest.approx(1.0)
+    with pytest.raises(ValueError, match="share one context"):
+        blend_history_with_temperature(
+            history=history,
+            temperature=forecast_with_empirical_cycle_hazard(
+                row=_row(index=4, outcome=None, signal=10.0, temperature=0.4),
+                completed_cycle_lengths=(27, 28, 29, 30),
+            ),
+        )
+    with pytest.raises(ValueError, match="between zero and one"):
+        blend_history_with_temperature(
+            history=history,
+            temperature=temperature,
+            temperature_weight=1.1,
+        )
 
 
 def test_baselines_reject_insufficient_or_invalid_configuration() -> None:

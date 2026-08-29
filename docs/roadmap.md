@@ -102,6 +102,8 @@ of a period starting within a future window.
   cycle-day performance, and per-cycle rankings
 - [x] Add a temperature-focused ablation to measure whether Oura temperature
   improves on cycle timing without relying on other wearable signals
+- [x] Add a conservative history-plus-temperature shadow candidate that keeps
+  cycle history dominant while allowing temperature to adjust probabilities
 - [ ] Compare or refine wearable features and model formulations only when the
   walk-forward diagnostics identify a specific weakness worth addressing
 - [ ] Accumulate enough morning snapshots to evaluate at least three cycles with

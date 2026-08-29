@@ -181,11 +181,13 @@ score, and point-estimate MAE. Until then it shows that prospective performance
 is waiting for a future period start.
 
 The same check-in prints and journals a wearable nearest-neighbor forecast in
-clearly labeled experimental shadow mode, together with a temperature-focused
-ablation that uses only cycle day and Oura nighttime temperature deviation.
-Cycle history remains the official forecast, and unavailable wearable data
-never blocks it. After a later period start resolves the forecasts, the journal
-reports their equal-cycle scores for direct prospective comparisons.
+clearly labeled experimental shadow mode, together with a hybrid that combines
+the cycle-history forecast with a temperature-focused adjustment. The hybrid
+keeps 75% of the history probabilities and gives 25% weight to a candidate
+using cycle day and Oura nighttime temperature deviation. Cycle history remains
+the official forecast, and unavailable wearable data never blocks it. After a
+later period start resolves the forecasts, the journal reports their
+equal-cycle scores for direct prospective comparisons.
 
 The training option uses `configs/phase_a.toml`, keeps the final temporal
 holdout reserved, and writes `artifacts/selected-model.json` plus
