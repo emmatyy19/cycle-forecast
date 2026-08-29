@@ -9,17 +9,18 @@ from cycle_forecast.data.cycle_history import load_cycle_history
 from cycle_forecast.data.oura_normalization import normalize_oura_snapshots
 from cycle_forecast.data.oura_snapshot import load_snapshot
 from cycle_forecast.data.wearable_alignment import align_daily_observation
+from cycle_forecast.features.temperature import build_temperature_trajectory_rows
 from cycle_forecast.features.wearable import (
     WearableFeatureRow,
     build_wearable_feature_row,
 )
 from cycle_forecast.forecasting.daily import DailyPeriodDistribution
 from cycle_forecast.forecasting.wearable_baselines import (
-    HISTORY_TEMPERATURE_BLEND_VERSION,
+    STAGE_AWARE_TEMPERATURE_BLEND_VERSION,
     WEARABLE_NEIGHBOR_BASELINE_VERSION,
-    blend_history_with_temperature,
+    blend_history_with_stage_aware_temperature,
     forecast_with_empirical_cycle_hazard,
-    forecast_with_temperature_neighbors,
+    forecast_with_temperature_trajectory_neighbors,
     forecast_with_wearable_neighbors,
 )
 
@@ -60,6 +61,7 @@ def predict_daily_with_wearable_neighbors(
         for current, following in pairwise(history)
     }
     training_rows: list[WearableFeatureRow] = []
+    context_rows: list[WearableFeatureRow] = []
     for observation in observations:
         if observation.day >= prediction_date:
             continue
@@ -70,15 +72,18 @@ def predict_daily_with_wearable_neighbors(
             oura_observations=(observation,),
         )
         next_start = next_starts.get(aligned.cycle_start_date)
-        if next_start is None or next_start > prediction_date:
-            continue
-        training_rows.append(
-            build_wearable_feature_row(
-                aligned=aligned,
-                next_cycle_start=next_start,
-                observed_through=prediction_date,
-            )
+        feature_row = build_wearable_feature_row(
+            aligned=aligned,
+            next_cycle_start=(
+                next_start
+                if next_start is not None and next_start <= prediction_date
+                else None
+            ),
+            observed_through=prediction_date,
         )
+        context_rows.append(feature_row)
+        if next_start is not None and next_start <= prediction_date:
+            training_rows.append(feature_row)
     current = align_daily_observation(
         prediction_date=prediction_date,
         prediction_cutoff=prediction_cutoff,
@@ -90,15 +95,22 @@ def predict_daily_with_wearable_neighbors(
         next_cycle_start=None,
         observed_through=prediction_date,
     )
+    context_rows.append(current_row)
     training = tuple(training_rows)
     distribution = forecast_with_wearable_neighbors(
         row=current_row,
         training_rows=training,
         neighbor_count=neighbor_count,
     )
-    temperature_ablation = forecast_with_temperature_neighbors(
-        row=current_row,
-        training_rows=training,
+    trajectories = build_temperature_trajectory_rows(rows=tuple(context_rows))
+    trajectories_by_date = {row.aligned.prediction_date: row for row in trajectories}
+    training_trajectories = tuple(
+        trajectories_by_date[row.aligned.prediction_date] for row in training
+    )
+    current_trajectory = trajectories_by_date[current_row.aligned.prediction_date]
+    temperature_trajectory = forecast_with_temperature_trajectory_neighbors(
+        row=current_trajectory,
+        training_rows=training_trajectories,
         neighbor_count=neighbor_count,
     )
     completed_cycle_lengths = tuple(
@@ -110,14 +122,15 @@ def predict_daily_with_wearable_neighbors(
         row=current_row,
         completed_cycle_lengths=completed_cycle_lengths,
     )
-    temperature_distribution = blend_history_with_temperature(
+    temperature_distribution = blend_history_with_stage_aware_temperature(
         history=history_distribution,
-        temperature=temperature_ablation,
+        temperature_trajectory=temperature_trajectory,
+        cycle_day=current_row.aligned.cycle_day,
     )
     return WearableDailyPrediction(
         model_version=WEARABLE_NEIGHBOR_BASELINE_VERSION,
         training_morning_count=len(training_rows),
         distribution=distribution,
-        temperature_model_version=HISTORY_TEMPERATURE_BLEND_VERSION,
+        temperature_model_version=STAGE_AWARE_TEMPERATURE_BLEND_VERSION,
         temperature_distribution=temperature_distribution,
     )

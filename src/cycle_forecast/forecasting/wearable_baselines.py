@@ -5,6 +5,7 @@ from math import sqrt
 from statistics import fmean, pstdev
 from typing import Final
 
+from cycle_forecast.features.temperature import TemperatureTrajectoryRow
 from cycle_forecast.features.wearable import WearableFeatureRow
 from cycle_forecast.forecasting.daily import (
     DAILY_FORECAST_HORIZON_DAYS,
@@ -26,6 +27,15 @@ HISTORY_TEMPERATURE_BLEND_VERSION: Final = "history-temperature-blend-v1"
 
 TEMPERATURE_BLEND_WEIGHT: Final = 0.25
 """Predeclared temperature share that preserves history as the dominant signal."""
+
+TEMPERATURE_TRAJECTORY_NEIGHBOR_VERSION: Final = "temperature-trajectory-neighbor-v1"
+"""Version of the recent temperature-pattern nearest-neighbor candidate."""
+
+STAGE_AWARE_TEMPERATURE_BLEND_VERSION: Final = "stage-aware-temperature-blend-v1"
+"""Version of the history-only early stage and later trajectory adjustment."""
+
+TEMPERATURE_INFLUENCE_START_CYCLE_DAY: Final = 11
+"""First cycle day on which the frozen trajectory candidate may affect history."""
 
 
 def forecast_with_empirical_cycle_hazard(
@@ -353,4 +363,121 @@ def blend_history_with_temperature(
             history_weight * history.after_horizon_probability
             + temperature_weight * temperature.after_horizon_probability
         ),
+    )
+
+
+def _trajectory_scales(
+    *, rows: tuple[TemperatureTrajectoryRow, ...]
+) -> tuple[float, ...]:
+    """Calculate training-only scales for trajectory values when observed."""
+    scales: list[float] = []
+    for value_index, missing_index in zip(
+        range(7),
+        (None, 7, 8, 9, 10, 11, 12),
+        strict=True,
+    ):
+        values = tuple(
+            row.values[value_index]
+            for row in rows
+            if missing_index is None or row.values[missing_index] == 0.0
+        )
+        deviation = pstdev(values) if len(values) > 1 else 0.0
+        scales.append(deviation if deviation > 0.0 else 1.0)
+    return tuple(scales)
+
+
+def _trajectory_distance(
+    *,
+    current: TemperatureTrajectoryRow,
+    candidate: TemperatureTrajectoryRow,
+    scales: tuple[float, ...],
+) -> float:
+    """Calculate standardized distance across recent temperature patterns."""
+    total = ((current.values[0] - candidate.values[0]) / scales[0]) ** 2
+    for position, (value_index, missing_index) in enumerate(
+        zip(range(1, 7), range(7, 13), strict=True),
+        start=1,
+    ):
+        current_missing = current.values[missing_index] == 1.0
+        candidate_missing = candidate.values[missing_index] == 1.0
+        if current_missing != candidate_missing:
+            total += 1.0
+        elif not current_missing:
+            total += (
+                (current.values[value_index] - candidate.values[value_index])
+                / scales[position]
+            ) ** 2
+    return sqrt(total)
+
+
+def forecast_with_temperature_trajectory_neighbors(
+    *,
+    row: TemperatureTrajectoryRow,
+    training_rows: tuple[TemperatureTrajectoryRow, ...],
+    neighbor_count: int = 20,
+    smoothing: float = 1.0,
+) -> DailyPeriodDistribution:
+    """Forecast from earlier mornings with similar recent temperature patterns."""
+    labeled = tuple(
+        candidate
+        for candidate in training_rows
+        if candidate.outcome_offset_days is not None
+        and candidate.aligned.prediction_cutoff < row.aligned.prediction_cutoff
+    )
+    if not labeled:
+        raise ValueError("temperature trajectory requires earlier labeled rows")
+    if neighbor_count < 1 or smoothing <= 0.0:
+        raise ValueError("neighbor_count and smoothing must be positive")
+    scales = _trajectory_scales(rows=labeled)
+    neighbors = tuple(
+        candidate
+        for _, candidate in sorted(
+            (
+                (
+                    _trajectory_distance(
+                        current=row,
+                        candidate=candidate,
+                        scales=scales,
+                    ),
+                    candidate,
+                )
+                for candidate in labeled
+            ),
+            key=lambda item: (item[0], item[1].aligned.prediction_cutoff),
+        )[:neighbor_count]
+    )
+    counts = [smoothing] * (DAILY_FORECAST_HORIZON_DAYS + 1)
+    for candidate in neighbors:
+        assert candidate.outcome_offset_days is not None
+        counts[min(candidate.outcome_offset_days, DAILY_FORECAST_HORIZON_DAYS)] += 1.0
+    total = fmean(counts) * len(counts)
+    return DailyPeriodDistribution(
+        prediction_date=row.aligned.prediction_date,
+        prediction_cutoff=row.aligned.prediction_cutoff,
+        daily_probabilities=tuple(
+            count / total for count in counts[:DAILY_FORECAST_HORIZON_DAYS]
+        ),
+        after_horizon_probability=counts[-1] / total,
+    )
+
+
+def blend_history_with_stage_aware_temperature(
+    *,
+    history: DailyPeriodDistribution,
+    temperature_trajectory: DailyPeriodDistribution,
+    cycle_day: int,
+) -> DailyPeriodDistribution:
+    """Keep history unchanged early and apply the frozen later-cycle blend."""
+    if cycle_day < 1:
+        raise ValueError("cycle_day must be positive")
+    if cycle_day < TEMPERATURE_INFLUENCE_START_CYCLE_DAY:
+        if (
+            history.prediction_date != temperature_trajectory.prediction_date
+            or history.prediction_cutoff != temperature_trajectory.prediction_cutoff
+        ):
+            raise ValueError("history and temperature forecasts must share one context")
+        return history
+    return blend_history_with_temperature(
+        history=history,
+        temperature=temperature_trajectory,
     )

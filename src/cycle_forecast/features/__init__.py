@@ -11,6 +11,12 @@ from cycle_forecast.features.cycle_history import (
     build_history_feature_vector,
     build_operational_history_features,
 )
+from cycle_forecast.features.temperature import (
+    TEMPERATURE_TRAJECTORY_FEATURE_NAMES,
+    TEMPERATURE_TRAJECTORY_FEATURE_VERSION,
+    TemperatureTrajectoryRow,
+    build_temperature_trajectory_rows,
+)
 from cycle_forecast.features.wearable import (
     WEARABLE_FEATURE_NAMES,
     WEARABLE_FEATURE_VERSION,
@@ -21,15 +27,19 @@ from cycle_forecast.features.wearable import (
 __all__ = [
     "CYCLE_HISTORY_FEATURE_VERSION",
     "DEFAULT_HISTORY_FEATURE_CONFIG",
+    "TEMPERATURE_TRAJECTORY_FEATURE_NAMES",
+    "TEMPERATURE_TRAJECTORY_FEATURE_VERSION",
     "WEARABLE_FEATURE_NAMES",
     "WEARABLE_FEATURE_VERSION",
     "CycleHistoryFeatureConfig",
     "HistoryFeatureDataset",
     "HistoryFeatureRow",
     "HistoryFeatureVector",
+    "TemperatureTrajectoryRow",
     "WearableFeatureRow",
     "build_development_history_features",
     "build_history_feature_vector",
     "build_operational_history_features",
+    "build_temperature_trajectory_rows",
     "build_wearable_feature_row",
 ]

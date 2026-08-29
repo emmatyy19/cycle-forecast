@@ -51,6 +51,18 @@ temperature evidence cannot replace the stronger history signal. The raw
 temperature ablation remains visible in development evaluation to distinguish
 the temperature signal from the benefit of shrinkage toward history.
 
+The next frozen shadow candidate addresses the observed early-cycle weakness
+without tuning a flexible model on the same evaluation cycles. Cycle history is
+returned unchanged through cycle day 10. Beginning on cycle day 11, the same
+75% history and 25% temperature pool uses nearest neighbors built from current
+temperature deviation, observed three- and seven-day means, a seven-day
+least-squares slope, the drop from the observed seven-day maximum, and the
+consecutive observed-night streak above Oura's personal baseline. Every
+nullable trajectory value has explicit missingness. Windows never cross a cycle
+boundary, missing nights are not interpolated, and a missing night breaks the
+elevated streak. This post-diagnostic candidate remains exploratory until it is
+evaluated on later prospective cycles that did not motivate its design.
+
 ## Model and calibration
 
 The first Phase B model is discrete-time logistic survival regression. Training
@@ -111,8 +123,8 @@ is represented as offset 15 for offset-error summaries. These diagnostic
 aggregates describe mornings, while the headline model scores continue to give
 each evaluation cycle equal weight. Per-cycle tables rank every candidate and
 omit the private cycle dates. This contract is versioned as
-`wearable-evaluation-v4` after adding the conservative history-plus-temperature
-candidate.
+`wearable-evaluation-v5` after adding the frozen stage-aware temperature
+trajectory candidate.
 
 ## Operational daily forecast
 
@@ -135,10 +147,11 @@ official forecast.
 The daily workflow also runs the wearable nearest-neighbor candidate in shadow
 mode from the same cutoff as the official history forecast. It labels this
 output experimental and combines the official history distribution with the
-temperature ablation using the fixed conservative pool. It journals the
-history, history-plus-temperature, and full-wearable distributions together
-and reports delayed, equal-cycle scores after outcomes arrive. Missing or
-insufficient wearable input never prevents the official forecast.
+temperature trajectory using the frozen cycle-day gate and conservative pool.
+It journals the history, stage-aware history-plus-temperature, and
+full-wearable distributions together and reports delayed, equal-cycle scores
+after outcomes arrive. Missing or insufficient wearable input never prevents
+the official forecast.
 
 For longer-range convenience, the same report includes one separately labeled
 point estimate. It prefers the selected packaged Phase A model and otherwise

@@ -308,7 +308,7 @@ def test_daily_flow_syncs_checks_history_and_forecasts(
                 daily_probabilities=(0.01,) * 15,
                 after_horizon_probability=0.85,
             ),
-            temperature_model_version="history-temperature-blend-v1",
+            temperature_model_version="stage-aware-temperature-blend-v1",
             temperature_distribution=DailyPeriodDistribution(
                 prediction_date=prediction_date,
                 prediction_cutoff=prediction_cutoff,
@@ -360,7 +360,7 @@ def test_daily_flow_syncs_checks_history_and_forecasts(
     assert "Naive median of completed cycle lengths" in captured.out
     assert "EXPERIMENTAL WEARABLE SHADOW" in captured.out
     assert "Wearable nearest neighbors" in captured.out
-    assert "Cycle history + temperature" in captured.out
+    assert "Cycle history + temperature trajectory" in captured.out
     assert "Training mornings       42" in captured.out
     assert "PROSPECTIVE JOURNAL" in captured.out
     assert "PAIRED SHADOW COMPARISON" in captured.out
@@ -370,7 +370,9 @@ def test_daily_flow_syncs_checks_history_and_forecasts(
     assert journal_path.is_file()
     journal_entry = json.loads(journal_path.read_text(encoding="utf-8"))
     assert journal_entry["wearable_model_version"] == "wearable-neighbor-v1"
-    assert journal_entry["temperature_model_version"] == "history-temperature-blend-v1"
+    assert (
+        journal_entry["temperature_model_version"] == "stage-aware-temperature-blend-v1"
+    )
 
 
 def test_prediction_error_is_concise_and_nonzero(
@@ -685,6 +687,13 @@ def test_wearable_evaluate_command_renders_private_safe_summary(
                     {1: 0.0, 3: 0.01, 7: 0.02, 14: 0.03},
                 ),
                 (
+                    "Cycle history plus temperature trajectory",
+                    "trajectory-v1",
+                    0.3,
+                    0.06,
+                    {1: 0.001, 3: 0.011, 7: 0.021, 14: 0.031},
+                ),
+                (
                     "Wearable nearest neighbors",
                     "neighbors-v1",
                     0.9,
@@ -817,6 +826,15 @@ def test_wearable_evaluate_command_renders_private_safe_summary(
     assert "Normalized days" in captured.out
     assert "60" in captured.out
     assert str(tmp_path) not in captured.out
+    exact_date_section = captured.out.split("EXACT-DATE SCORES", maxsplit=1)[1].split(
+        "PLANNING-WINDOW BRIER", maxsplit=1
+    )[0]
+    exact_lines = exact_date_section.splitlines()
+    history_line = next(line for line in exact_lines if "Cycle history " in line)
+    trajectory_line = next(
+        line for line in exact_lines if "History + temp trajectory" in line
+    )
+    assert history_line.index("0.200") == trajectory_line.index("0.300")
 
 
 def test_bare_command_guides_wearable_evaluation(
