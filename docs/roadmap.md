@@ -108,7 +108,8 @@ of a period starting within a future window.
   early-cycle weakness: keep history unchanged through day 10, then evaluate a
   frozen cutoff-safe temperature-trajectory adjustment
 - [ ] Accumulate enough morning snapshots to evaluate at least three cycles with
-  strict prospective retrieval provenance
+  strict prospective retrieval provenance under the predeclared
+  [wearable promotion criteria](design/005-daily-survival-modeling.md#wearable-promotion-criteria)
 
 Phase B begins only after Phase A has a reproducible evaluation pipeline and a
 history-only baseline worth comparing against.
@@ -132,6 +133,8 @@ history-only baseline worth comparing against.
   forecasts automatically with equal weight for every completed cycle
 - [x] Show wearable forecasts as experimental comparisons until promotion
   criteria based on prospective cycle-level evaluation are satisfied
+- [x] Automate the predeclared wearable promotion review from paired private
+  prospective forecasts without printing dates or health measurements
 
 ## Later operational milestones
 

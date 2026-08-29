@@ -6,6 +6,7 @@ import re
 import tempfile
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
+from enum import StrEnum, auto
 from itertools import pairwise
 from math import isfinite
 from pathlib import Path
@@ -19,6 +20,9 @@ from cycle_forecast.forecasting.daily import (
     DailyPeriodDistribution,
     evaluate_daily_distributions,
 )
+from cycle_forecast.forecasting.wearable_baselines import (
+    STAGE_AWARE_TEMPERATURE_BLEND_VERSION,
+)
 from cycle_forecast.prediction_daily import DailyPointEstimate, HistoryDailyPrediction
 
 PROSPECTIVE_JOURNAL_SCHEMA_VERSION: Final = "prospective-forecast-journal-v3"
@@ -26,6 +30,15 @@ PROSPECTIVE_JOURNAL_SCHEMA_VERSION: Final = "prospective-forecast-journal-v3"
 
 DEFAULT_PROSPECTIVE_JOURNAL_PATH: Final = Path("data/private/forecast-journal.jsonl")
 """Ignored owner-private journal used by the unified daily workflow."""
+
+PROMOTION_MINIMUM_CYCLE_COUNT: Final = 3
+"""Minimum completed prospective cycles required for a promotion decision."""
+
+PROMOTION_MINIMUM_AVAILABILITY: Final = 0.9
+"""Required candidate coverage within every eligible completed cycle."""
+
+PROMOTION_WINDOW_BRIER_MARGIN: Final = 0.01
+"""Largest permitted absolute candidate regression for a planning window."""
 
 _V1_ENTRY_FIELDS: Final[set[str]] = {
     "schema_version",
@@ -58,6 +71,15 @@ class ProspectiveJournalError(ValueError):
     """Indicate an invalid or conflicting private forecast journal."""
 
 
+class WearablePromotionStatus(StrEnum):
+    """Describe the predeclared wearable promotion-review outcome."""
+
+    INSUFFICIENT_EVIDENCE = auto()
+    PROMOTE = auto()
+    REJECT = auto()
+    INCONCLUSIVE = auto()
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ProspectiveForecastEntry:
     """Store exactly one morning forecast before its outcome is known."""
@@ -84,6 +106,24 @@ class ProspectiveForecastEntry:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class WearablePromotionReview:
+    """Report the version-bound paired wearable promotion criteria."""
+
+    candidate_version: str
+    status: WearablePromotionStatus
+    eligible_cycle_count: int
+    paired_forecast_count: int
+    cycle_availability_rates: tuple[float, ...]
+    history_mean_cycle_logarithmic_loss: float | None
+    candidate_mean_cycle_logarithmic_loss: float | None
+    history_mean_cycle_brier_score: float | None
+    candidate_mean_cycle_brier_score: float | None
+    history_mean_cycle_window_brier_scores: dict[int, float]
+    candidate_mean_cycle_window_brier_scores: dict[int, float]
+    candidate_logarithmic_loss_cycle_wins: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ProspectivePerformanceSummary:
     """Summarize equally weighted completed-cycle prospective performance."""
 
@@ -104,6 +144,7 @@ class ProspectivePerformanceSummary:
     temperature_mean_cycle_logarithmic_loss: float | None
     temperature_mean_cycle_brier_score: float | None
     temperature_mean_cycle_window_brier_scores: dict[int, float]
+    promotion_review: WearablePromotionReview
 
 
 def build_prospective_entry(
@@ -443,6 +484,158 @@ def _next_start_by_cycle(
     }
 
 
+def _mean_cycle_logarithmic_loss(
+    *, evaluations: tuple[DailyForecastEvaluation, ...]
+) -> float:
+    """Average logarithmic loss with equal weight for every cycle."""
+    return sum(item.logarithmic_loss for item in evaluations) / len(evaluations)
+
+
+def _mean_cycle_brier_score(
+    *, evaluations: tuple[DailyForecastEvaluation, ...]
+) -> float:
+    """Average multiclass Brier score with equal weight for every cycle."""
+    return sum(item.multiclass_brier_score for item in evaluations) / len(evaluations)
+
+
+def _mean_cycle_window_scores(
+    *, evaluations: tuple[DailyForecastEvaluation, ...]
+) -> dict[int, float]:
+    """Average planning-window scores with equal weight for every cycle."""
+    return {
+        window: sum(item.window_brier_scores[window] for item in evaluations)
+        / len(evaluations)
+        for window in CALIBRATION_WINDOWS
+    }
+
+
+def _review_wearable_promotion(
+    *,
+    grouped: dict[date, list[ProspectiveForecastEntry]],
+    next_starts: dict[date, date],
+) -> WearablePromotionReview:
+    """Apply the frozen promotion criteria to exact-version paired forecasts."""
+    history_evaluations: list[DailyForecastEvaluation] = []
+    candidate_evaluations: list[DailyForecastEvaluation] = []
+    availability_rates: list[float] = []
+    paired_forecast_count = 0
+    for cycle_start, cycle_entries in grouped.items():
+        candidate_entries = tuple(
+            entry
+            for entry in cycle_entries
+            if entry.temperature_model_version == STAGE_AWARE_TEMPERATURE_BLEND_VERSION
+        )
+        if not candidate_entries:
+            continue
+        availability_rates.append(len(candidate_entries) / len(cycle_entries))
+        paired_forecast_count += len(candidate_entries)
+        outcomes = tuple(
+            (next_starts[cycle_start] - entry.prediction_date).days
+            for entry in candidate_entries
+        )
+        history_evaluations.append(
+            evaluate_daily_distributions(
+                forecasts=tuple(
+                    DailyPeriodDistribution(
+                        prediction_date=entry.prediction_date,
+                        prediction_cutoff=entry.prediction_cutoff,
+                        daily_probabilities=entry.daily_probabilities,
+                        after_horizon_probability=entry.after_horizon_probability,
+                    )
+                    for entry in candidate_entries
+                ),
+                outcome_offsets=outcomes,
+            )
+        )
+        candidate_evaluations.append(
+            evaluate_daily_distributions(
+                forecasts=tuple(
+                    DailyPeriodDistribution(
+                        prediction_date=entry.prediction_date,
+                        prediction_cutoff=entry.prediction_cutoff,
+                        daily_probabilities=cast(
+                            tuple[float, ...],
+                            entry.temperature_daily_probabilities,
+                        ),
+                        after_horizon_probability=cast(
+                            float, entry.temperature_after_horizon_probability
+                        ),
+                    )
+                    for entry in candidate_entries
+                ),
+                outcome_offsets=outcomes,
+            )
+        )
+    eligible_cycle_count = len(history_evaluations)
+    if not eligible_cycle_count:
+        return WearablePromotionReview(
+            candidate_version=STAGE_AWARE_TEMPERATURE_BLEND_VERSION,
+            status=WearablePromotionStatus.INSUFFICIENT_EVIDENCE,
+            eligible_cycle_count=0,
+            paired_forecast_count=0,
+            cycle_availability_rates=(),
+            history_mean_cycle_logarithmic_loss=None,
+            candidate_mean_cycle_logarithmic_loss=None,
+            history_mean_cycle_brier_score=None,
+            candidate_mean_cycle_brier_score=None,
+            history_mean_cycle_window_brier_scores={},
+            candidate_mean_cycle_window_brier_scores={},
+            candidate_logarithmic_loss_cycle_wins=0,
+        )
+    paired_history = tuple(history_evaluations)
+    paired_candidate = tuple(candidate_evaluations)
+    history_log_loss = _mean_cycle_logarithmic_loss(evaluations=paired_history)
+    candidate_log_loss = _mean_cycle_logarithmic_loss(evaluations=paired_candidate)
+    history_brier = _mean_cycle_brier_score(evaluations=paired_history)
+    candidate_brier = _mean_cycle_brier_score(evaluations=paired_candidate)
+    history_windows = _mean_cycle_window_scores(evaluations=paired_history)
+    candidate_windows = _mean_cycle_window_scores(evaluations=paired_candidate)
+    cycle_wins = sum(
+        candidate.logarithmic_loss < history.logarithmic_loss
+        for history, candidate in zip(paired_history, paired_candidate, strict=True)
+    )
+    availability_passes = all(
+        rate >= PROMOTION_MINIMUM_AVAILABILITY for rate in availability_rates
+    )
+    window_regression = any(
+        candidate_windows[window] - history_windows[window]
+        > PROMOTION_WINDOW_BRIER_MARGIN
+        for window in (3, 7, 14)
+    )
+    promotion_passes = (
+        eligible_cycle_count >= PROMOTION_MINIMUM_CYCLE_COUNT
+        and availability_passes
+        and candidate_log_loss < history_log_loss
+        and candidate_brier < history_brier
+        and cycle_wins > eligible_cycle_count / 2
+        and not window_regression
+    )
+    if eligible_cycle_count < PROMOTION_MINIMUM_CYCLE_COUNT:
+        status = WearablePromotionStatus.INSUFFICIENT_EVIDENCE
+    elif promotion_passes:
+        status = WearablePromotionStatus.PROMOTE
+    elif (
+        candidate_log_loss > history_log_loss and candidate_brier > history_brier
+    ) or window_regression:
+        status = WearablePromotionStatus.REJECT
+    else:
+        status = WearablePromotionStatus.INCONCLUSIVE
+    return WearablePromotionReview(
+        candidate_version=STAGE_AWARE_TEMPERATURE_BLEND_VERSION,
+        status=status,
+        eligible_cycle_count=eligible_cycle_count,
+        paired_forecast_count=paired_forecast_count,
+        cycle_availability_rates=tuple(availability_rates),
+        history_mean_cycle_logarithmic_loss=history_log_loss,
+        candidate_mean_cycle_logarithmic_loss=candidate_log_loss,
+        history_mean_cycle_brier_score=history_brier,
+        candidate_mean_cycle_brier_score=candidate_brier,
+        history_mean_cycle_window_brier_scores=history_windows,
+        candidate_mean_cycle_window_brier_scores=candidate_windows,
+        candidate_logarithmic_loss_cycle_wins=cycle_wins,
+    )
+
+
 def summarize_prospective_performance(
     *,
     entries: tuple[ProspectiveForecastEntry, ...],
@@ -456,6 +649,9 @@ def summarize_prospective_performance(
         if next_start is None or entry.prediction_date > next_start:
             continue
         grouped.setdefault(entry.current_cycle_start_date, []).append(entry)
+    promotion_review = _review_wearable_promotion(
+        grouped=grouped, next_starts=next_starts
+    )
     cycle_evaluations: list[DailyForecastEvaluation] = []
     cycle_point_errors: list[float] = []
     wearable_cycle_evaluations: list[DailyForecastEvaluation] = []
@@ -568,6 +764,7 @@ def summarize_prospective_performance(
             temperature_mean_cycle_logarithmic_loss=None,
             temperature_mean_cycle_brier_score=None,
             temperature_mean_cycle_window_brier_scores={},
+            promotion_review=promotion_review,
         )
     wearable_cycle_count = len(wearable_cycle_evaluations)
     temperature_cycle_count = len(temperature_cycle_evaluations)
@@ -644,4 +841,5 @@ def summarize_prospective_performance(
             if temperature_cycle_count
             else {}
         ),
+        promotion_review=promotion_review,
     )

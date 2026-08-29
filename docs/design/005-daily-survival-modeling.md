@@ -178,3 +178,50 @@ from receiving extra weight. The point estimate is evaluated by absolute date
 error under the same equal-cycle rule. Predictions accidentally made after a
 later-reported period start are excluded because their event offset would be
 negative.
+
+## Wearable promotion criteria
+
+The `stage-aware-temperature-blend-v1` history-plus-temperature candidate is
+the only wearable candidate eligible for the first promotion review. Its
+cycle-day gate, temperature features, missingness behavior, nearest-neighbor
+configuration, and 75% history to 25% temperature blend are frozen before the
+prospective evaluation cycles begin. The full-wearable and raw temperature
+candidates remain diagnostic comparisons and are not eligible for promotion at
+this review.
+
+A promotion review requires at least three completed cycles containing a
+strictly prospective journal entry from this candidate version. Every such
+completed cycle is included in the review. Within every reviewed cycle, the
+candidate must be available on at least 90% of the dates scored for the history
+baseline. Candidate and history scores are compared only on their shared dates.
+The review cannot omit an eligible cycle or select a favorable subset.
+
+Promotion requires all of the following predeclared results:
+
+- lower cycle-weighted multiclass logarithmic loss than the history baseline;
+- lower cycle-weighted multiclass Brier score than the history baseline;
+- lower logarithmic loss in a strict majority of the reviewed cycles; and
+- no 3-, 7-, or 14-day cycle-weighted window Brier score more than 0.01 worse
+  in absolute terms than the corresponding history-baseline score.
+
+Three cycles are a minimum evidence gate, not a claim of broad statistical
+generalization. If every criterion passes, the candidate may replace history
+as the official local short-range distribution while history remains visible
+as a fallback and monitoring comparator. If the aggregate logarithmic loss and
+multiclass Brier score are both worse, or any window exceeds the safety margin,
+the candidate is rejected for promotion. Any other result is inconclusive and
+the frozen candidate remains in shadow mode while more prospective cycles
+accumulate.
+
+The reviewed cycles cannot be reused to tune the eligible candidate. After a
+promotion or rejection decision is recorded, diagnostics from those cycles may
+motivate a separately versioned candidate, but that candidate must be frozen
+and evaluated on later prospective cycles. Missing forecasts count against the
+availability gate and cannot be removed merely to improve comparative scores.
+
+The daily prospective-journal report applies these rules automatically. It
+filters candidate forecasts to the exact eligible model version, reports
+privacy-safe per-cycle availability rates, scores history and the candidate on
+paired dates, and shows the aggregate score pairs, cycle wins, planning-window
+deltas, and resulting `insufficient evidence`, `promote`, `reject`, or
+`inconclusive` decision. It never prints cycle dates or wearable measurements.
