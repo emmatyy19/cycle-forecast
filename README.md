@@ -1,10 +1,64 @@
 # Cycle Forecast
 
-An end-to-end machine learning project for forecasting menstrual cycle timing
-from cycle history and, eventually, wearable data.
+An end-to-end machine learning system for forecasting menstrual cycle timing
+from cycle history and daily Oura observations.
 
 This project is for personal experimentation and is not a medical device. It
 must not be used for diagnosis or medical decision-making.
+
+## What I set out to learn
+
+This project is my way of going beyond classroom exercises and one-off
+notebooks. I wanted to experience the less visible work that turns an ML idea
+into a dependable system: defining targets precisely, validating imperfect
+inputs, preventing temporal leakage, comparing against honest baselines,
+preserving training and prediction parity, packaging artifacts, and evaluating
+predictions after their outcomes finally arrive.
+
+The main result is not one clever model. It is a reusable, programmatic pipeline
+with explicit data and prediction contracts, versioned transformations,
+cutoff-safe evaluation, reproducible configuration, model and dataset
+provenance, local delivery, and delayed prospective scoring. Building the full
+path taught me that trustworthy ML depends as much on software boundaries and
+evaluation discipline as it does on model selection.
+
+It also gave me practical experience integrating with an OAuth application
+offered by an external company. I learned how to configure the Oura developer
+application, implement a local authorization callback, exchange and refresh
+tokens, keep client credentials in the operating-system Keychain, and turn
+paginated API responses into validated, provenance-preserving local snapshots.
+That work made authentication, API boundaries, and secret handling feel like
+part of application design rather than setup performed outside the codebase.
+
+## How I like to build
+
+I am meticulous and consistency-oriented when I code. I enjoy tools such as
+pre-commit, strict static typing, deterministic tests, coverage gates, and
+automated formatting because they turn personal preferences into shared,
+repeatable expectations. Conventions make a codebase easier to review,
+collaborate on, and maintain; they also let future contributors focus on the
+problem instead of rediscovering how the repository works.
+
+My preferred development style is to:
+
+- model every external API response the application consumes with strict
+  Pydantic schemas, so unvalidated dictionaries do not spread into domain and
+  modeling code;
+- write design documents before large changes, then allow those designs to
+  evolve when evidence changes the problem;
+- implement in small, reviewable increments with focused tests and pull
+  requests;
+- use descriptive conventional commits, creating a history that supports future
+  automated changelogs and semantic versioning;
+- treat privacy, reproducibility, and failure recovery as product requirements;
+  and
+- favor measured evidence and simple baselines over adding complexity for its
+  own sake.
+
+That last point is intentional: this repository defers services, containers,
+registries, and scheduled retraining until they solve a demonstrated need. I
+care about robust engineering, but I also care about choosing the smallest
+system that preserves the important guarantees.
 
 ## Motivation
 
@@ -22,11 +76,38 @@ coverage of the actual start date.
 
 ## Project status
 
-The project is currently building Phase A: a history-only model that predicts
-the next cycle length without using future information. See the
-[project roadmap](docs/roadmap.md) for milestone progress and the
-[Phase A design](docs/design/001-cycle-history-model.md) for the prediction,
-data, and evaluation contracts.
+Phase A is complete: the repository has a reproducible history-only forecasting
+pipeline, leakage-safe walk-forward evaluation, temporal holdout, uncertainty
+analysis, packaged model, and local prediction interface.
+
+Phase B now synchronizes and versions private Oura snapshots, aligns wearable
+observations at cutoff-safe daily prediction times, evaluates survival and
+baseline formulations, and runs wearable candidates in experimental shadow
+mode. Cycle history remains the official forecast. The current milestone is to
+accumulate at least three completed cycles with strict prospective retrieval
+provenance before applying the predeclared wearable-promotion criteria. No
+candidate or decision rule will be tuned after seeing those results; the
+promotion outcome follows the frozen criteria mechanically.
+
+See the [project roadmap](docs/roadmap.md) for milestone-level progress.
+
+## Design documents
+
+The repository records important decisions before implementation and updates
+them when the evidence changes:
+
+- [Cycle-history forecasting](docs/design/001-cycle-history-model.md) defines
+  the Phase A target, leakage boundary, evaluation, and delivery contract.
+- [Daily wearable prediction](docs/design/002-daily-wearable-prediction.md)
+  defines the time-to-event target and operational observation cutoff.
+- [Oura data contract](docs/design/003-oura-data-contract.md) specifies private
+  API ingestion, immutable snapshots, and source-data boundaries.
+- [Wearable alignment](docs/design/004-wearable-alignment.md) defines
+  correction-aware, cutoff-safe normalization and cycle alignment.
+- [Daily survival modeling](docs/design/005-daily-survival-modeling.md) records
+  candidate, calibration, evaluation, shadow-mode, and promotion semantics.
+- [Private backup and restore](docs/design/006-private-backup.md) documents the
+  encrypted recovery format, threat model, and overwrite safeguards.
 
 ## Repository toolchain
 
@@ -38,9 +119,12 @@ dependency configuration is centralized in `pyproject.toml`:
   docstring rules.
 - **Pyright/Pylance** performs strict static type checking. Pyright runs from
   the command line; Pylance displays the same class of diagnostics in VS Code.
-- **pytest** runs the test suite, with **pytest-testmon** selecting tests affected
-  by a change during pre-commit.
+- **pytest** runs deterministic synthetic tests, **pytest-cov** enforces the
+  coverage floor in CI, and **pytest-testmon** selects affected tests during
+  pre-commit.
 - **pre-commit** applies these checks before Git creates a commit.
+- **GitHub Actions** repeats the full quality and build workflow in a clean Linux
+  environment for every pull request.
 
 Exact dependency resolutions live in `uv.lock`, which is committed and should
 not be edited manually.
@@ -74,6 +158,7 @@ uv run ruff format --check .
 uv run ruff check .
 uv run pyright
 uv run pytest
+uv build
 ```
 
 Pyright is configured in strict mode. All functions must therefore have typed
@@ -90,14 +175,15 @@ dependency cache. Later runs select tests affected by changed code. Run
 `uv run pytest` without `--testmon` whenever you want the complete suite.
 
 GitHub Actions runs the full suite with branch coverage on every pull request
-and every push to `main`. It also verifies formatting, linting, strict types,
-the lockfile, and package builds in a clean Linux environment.
+and every push to `main`, enforcing at least 90% aggregate coverage. It also
+verifies formatting, linting, strict types, the lockfile, and package builds in
+a clean Linux environment.
 
 ## Local prediction
 
 Keep private cycle history under `data/raw/` or `data/private/`. Run the command
-with no arguments for a guided menu that can train a model or make a prediction
-through numbered choices:
+with no arguments for a guided menu covering daily forecasts, period recording,
+model training, direct prediction, and wearable evaluation:
 
 ```bash
 uv run cycle-forecast
@@ -252,7 +338,8 @@ the command neither uploads data nor writes a forecast file.
 
 ## Local wearable evaluation
 
-Compare the daily history baseline, wearable nearest-neighbor baseline, and
+Compare the daily history baseline, wearable nearest-neighbor baseline,
+temperature ablation, stage-aware history-plus-temperature candidate, and
 calibrated discrete-time survival model using private cycle history and Oura
 snapshots. Run `uv run cycle-forecast` and choose **Evaluate wearable models**
 for the guided workflow. In VS Code, choose **Cycle Forecast: Evaluate
@@ -293,8 +380,8 @@ Tests live under `tests/` and mirror the package structure under
 pytest and VS Code can discover them.
 
 ```text
-src/cycle_forecast/features/cycle_features.py
-tests/features/test_cycle_features.py
+src/cycle_forecast/features/cycle_history.py
+tests/features/test_cycle_history.py
 ```
 
 VS Code's Testing view can discover, run, and debug the entire suite or an
@@ -306,7 +393,7 @@ created tests do not appear immediately.
 Raw, private, interim, and processed health data must remain local. Generated
 models, experiment artifacts, credentials, and notebook outputs containing
 private data must not be committed. Safe synthetic fixtures may be committed
-under `data/synthetic/` when that directory is introduced.
+under `data/synthetic/`.
 
 The committed cycle-history exploration notebook and documented results use
 only independently invented synthetic data. Private analysis runs the identical
