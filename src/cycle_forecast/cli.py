@@ -6,7 +6,7 @@ import json
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import asdict
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum, auto
 from pathlib import Path
 from typing import TextIO
@@ -31,6 +31,13 @@ from cycle_forecast.data.oura_sync import (
 from cycle_forecast.data.period_recording import (
     PeriodRecordingResult,
     record_period_start,
+)
+from cycle_forecast.data.private_backup import (
+    PrivateBackupError,
+    PrivateBackupResult,
+    PrivateRestoreResult,
+    create_private_backup,
+    restore_private_backup,
 )
 from cycle_forecast.evaluation.prospective_journal import (
     DEFAULT_PROSPECTIVE_JOURNAL_PATH,
@@ -102,6 +109,8 @@ class Command(StrEnum):
     OURA_SYNC = "oura-sync"
     OURA_SETUP = "oura-setup"
     OURA_STATUS = "oura-status"
+    PRIVATE_BACKUP = "private-backup"
+    PRIVATE_RESTORE = "private-restore"
     WEARABLE_EVALUATE = "wearable-evaluate"
 
 
@@ -183,6 +192,42 @@ def _parser() -> argparse.ArgumentParser:
         "--yes",
         action="store_true",
         help="save without an interactive confirmation",
+    )
+    private_backup = subparsers.add_parser(
+        "private-backup",
+        help="create an encrypted backup of validated private forecasting data",
+    )
+    private_backup.add_argument(
+        "--history", type=Path, default=Path("data/raw/cycle_history.csv")
+    )
+    private_backup.add_argument(
+        "--snapshot-dir", type=Path, default=DEFAULT_OURA_SNAPSHOT_DIRECTORY
+    )
+    private_backup.add_argument(
+        "--journal", type=Path, default=DEFAULT_PROSPECTIVE_JOURNAL_PATH
+    )
+    private_backup.add_argument("--output", type=Path, required=True)
+    private_backup.add_argument(
+        "--replace", action="store_true", help="replace an existing encrypted bundle"
+    )
+    private_restore = subparsers.add_parser(
+        "private-restore",
+        help="verify and restore an encrypted private forecasting backup",
+    )
+    private_restore.add_argument("--input", type=Path, required=True)
+    private_restore.add_argument(
+        "--history", type=Path, default=Path("data/raw/cycle_history.csv")
+    )
+    private_restore.add_argument(
+        "--snapshot-dir", type=Path, default=DEFAULT_OURA_SNAPSHOT_DIRECTORY
+    )
+    private_restore.add_argument(
+        "--journal", type=Path, default=DEFAULT_PROSPECTIVE_JOURNAL_PATH
+    )
+    private_restore.add_argument(
+        "--replace",
+        action="store_true",
+        help="replace destination files that already exist",
     )
     train = subparsers.add_parser(
         "train",
@@ -493,13 +538,22 @@ def _prompt_date(
 
 
 def _prompt_positive_int(
-    *, label: str, input_fn: Callable[[str], str], output: TextIO
+    *,
+    label: str,
+    input_fn: Callable[[str], str],
+    output: TextIO,
+    maximum: int | None = None,
 ) -> int:
-    """Prompt until a positive whole number is entered."""
+    """Prompt until a positive whole number within an optional bound is entered."""
     while True:
         raw_value = input_fn(f"{label}: ").strip()
-        if raw_value.isdecimal() and int(raw_value) > 0:
-            return int(raw_value)
+        if raw_value.isdecimal():
+            value = int(raw_value)
+            if value > 0 and (maximum is None or value <= maximum):
+                return value
+        if maximum is not None:
+            print(f"Please enter a whole number from 1 through {maximum}.", file=output)
+            continue
         print("Please enter a positive whole number.", file=output)
 
 
@@ -571,6 +625,7 @@ def _run_period_recording(
                 label="How many days did this period last?",
                 input_fn=input_fn,
                 output=output,
+                maximum=(recorded_on - latest.cycle_start_date).days + 1,
             )
         elif (
             resolved_date > latest.cycle_start_date
@@ -582,6 +637,7 @@ def _run_period_recording(
                 label="How many days did your previous period last?",
                 input_fn=input_fn,
                 output=output,
+                maximum=(resolved_date - latest.cycle_start_date).days,
             )
 
     print("\nPLEASE CONFIRM", file=output)
@@ -1474,6 +1530,71 @@ def _run_training(
     return result, resolved_history
 
 
+def _run_private_backup(
+    *,
+    history_path: Path,
+    snapshot_directory: Path,
+    journal_path: Path,
+    output_path: Path,
+    replace: bool,
+    password_fn: Callable[[str], str],
+    output: TextIO,
+) -> PrivateBackupResult:
+    """Prompt securely and create one authenticated encrypted private backup."""
+    password = password_fn("Backup password: ")
+    confirmation = password_fn("Confirm backup password: ")
+    if password != confirmation:
+        raise PrivateBackupError("backup passwords do not match")
+    result = create_private_backup(
+        history_path=history_path,
+        snapshot_directory=snapshot_directory,
+        journal_path=journal_path,
+        output_path=output_path,
+        password=password,
+        created_at=datetime.now(tz=UTC),
+        replace=replace,
+    )
+    print("Encrypted private backup created.", file=output)
+    print(f"  Destination             {result.output_path}", file=output)
+    print(f"  Oura snapshots          {result.snapshot_count}", file=output)
+    print(
+        f"  Forecast journal        {'included' if result.journal_included else 'not present'}",
+        file=output,
+    )
+    print("  OAuth credentials       excluded", file=output)
+    return result
+
+
+def _run_private_restore(
+    *,
+    input_path: Path,
+    history_path: Path,
+    snapshot_directory: Path,
+    journal_path: Path,
+    replace: bool,
+    password_fn: Callable[[str], str],
+    output: TextIO,
+) -> PrivateRestoreResult:
+    """Prompt securely and restore one authenticated encrypted private backup."""
+    result = restore_private_backup(
+        input_path=input_path,
+        history_path=history_path,
+        snapshot_directory=snapshot_directory,
+        journal_path=journal_path,
+        password=password_fn("Backup password: "),
+        replace=replace,
+    )
+    print("Encrypted private backup verified and restored.", file=output)
+    print(f"  Cycle history           {result.history_path}", file=output)
+    print(f"  Oura snapshots          {result.snapshot_count}", file=output)
+    print(
+        f"  Forecast journal        {'restored' if result.journal_restored else 'not present'}",
+        file=output,
+    )
+    print(f"  Existing files replaced {result.replaced_file_count}", file=output)
+    return result
+
+
 def _run_interactive(*, input_fn: Callable[[str], str], output: TextIO) -> None:
     """Run the menu-driven prediction or training journey."""
     action = _choose_action(input_fn=input_fn, output=output)
@@ -1639,6 +1760,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                 input_fn=input,
                 output=sys.stdout,
             )
+        elif arguments.command == Command.PRIVATE_BACKUP:
+            _run_private_backup(
+                history_path=arguments.history,
+                snapshot_directory=arguments.snapshot_dir,
+                journal_path=arguments.journal,
+                output_path=arguments.output,
+                replace=arguments.replace,
+                password_fn=getpass.getpass,
+                output=sys.stdout,
+            )
+        elif arguments.command == Command.PRIVATE_RESTORE:
+            _run_private_restore(
+                input_path=arguments.input,
+                history_path=arguments.history,
+                snapshot_directory=arguments.snapshot_dir,
+                journal_path=arguments.journal,
+                replace=arguments.replace,
+                password_fn=getpass.getpass,
+                output=sys.stdout,
+            )
         elif arguments.command == Command.OURA_AUTHORIZE:
             authorize_interactively(
                 redirect_uri=arguments.redirect_uri,
@@ -1708,6 +1849,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             operation = "run the daily forecast"
         elif arguments.command == Command.PERIOD_RECORD:
             operation = "record a period"
+        elif arguments.command == Command.PRIVATE_BACKUP:
+            operation = "create a private backup"
+        elif arguments.command == Command.PRIVATE_RESTORE:
+            operation = "restore a private backup"
         elif arguments.command == Command.PREDICT:
             operation = "make a prediction"
         elif arguments.command == Command.OURA_AUTHORIZE:

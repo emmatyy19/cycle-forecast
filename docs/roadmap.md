@@ -137,6 +137,8 @@ history-only baseline worth comparing against.
   criteria based on prospective cycle-level evaluation are satisfied
 - [x] Automate the predeclared wearable promotion review from paired private
   prospective forecasts without printing dates or health measurements
+- [x] Add authenticated encrypted backup and guarded restore for validated cycle
+  history, Oura snapshots, and the prospective forecast journal
 
 ## Later operational milestones
 

@@ -74,3 +74,11 @@ refactoring does not require a version increment.
 
 A fingerprint identifies private data but does not anonymize it. Personal input,
 derived rows, and their provenance metadata must remain private.
+
+## Encrypted backups
+
+Use the `private-backup` command documented in the project README rather than
+copying private directories into the repository. Backup bundles are encrypted
+and may be stored outside the project, but their passwords must be retained
+separately. OAuth credentials are not included and must be reauthorized after a
+full device recovery.

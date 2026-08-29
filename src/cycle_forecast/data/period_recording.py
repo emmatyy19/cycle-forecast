@@ -126,6 +126,12 @@ def record_period_start(
     )
     if cycle_start_date > recorded_on:
         raise PeriodRecordingError("period start date cannot be in the future")
+    elapsed_calendar_days = (recorded_on - cycle_start_date).days + 1
+    if period_length_days is not None and period_length_days > elapsed_calendar_days:
+        raise PeriodRecordingError(
+            "period length cannot extend beyond the recording date; "
+            f"maximum {elapsed_calendar_days} days"
+        )
 
     created_history = not history_path.exists()
     if created_history:
