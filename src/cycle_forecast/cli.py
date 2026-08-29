@@ -13,7 +13,7 @@ from typing import TextIO
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from cycle_forecast import __version__
-from cycle_forecast.data.cycle_history import load_cycle_history
+from cycle_forecast.data.cycle_history import CycleHistoryRecord, load_cycle_history
 from cycle_forecast.data.oura_auth import (
     DEFAULT_OURA_TOKEN_PATH,
     OuraAuthorizationError,
@@ -886,6 +886,57 @@ def _render_daily_model_refresh(
     )
 
 
+def update_daily_period_history(
+    *,
+    history_path: Path,
+    records: tuple[CycleHistoryRecord, ...],
+    recorded_on: date,
+    input_fn: Callable[[str], str],
+    output: TextIO,
+) -> None:
+    """Offer new-start recording or completion of an ongoing period."""
+    latest = records[-1]
+    latest_start = latest.cycle_start_date
+    print("\n2. Period history", file=output)
+    print(f"   Latest recorded start: {latest_start.isoformat()}", file=output)
+    answer = input_fn("   Did a newer period start? [y/N] ").strip().lower()
+    if answer in {"y", "yes"}:
+        _run_period_recording(
+            history_path=history_path,
+            cycle_start_date=None,
+            period_length_days=None,
+            previous_period_length_days=None,
+            recorded_on=recorded_on,
+            assume_yes=False,
+            input_fn=input_fn,
+            output=output,
+        )
+        return
+    if latest.period_length_days is not None:
+        print("   ✓ Period history is current.", file=output)
+        return
+    ended = (
+        input_fn(
+            f"   Has the period that began {latest_start.isoformat()} ended? [y/N] "
+        )
+        .strip()
+        .lower()
+    )
+    if ended not in {"y", "yes"}:
+        print("   ✓ Current period remains ongoing.", file=output)
+        return
+    _run_period_recording(
+        history_path=history_path,
+        cycle_start_date=latest_start,
+        period_length_days=None,
+        previous_period_length_days=None,
+        recorded_on=recorded_on,
+        assume_yes=False,
+        input_fn=input_fn,
+        output=output,
+    )
+
+
 def _run_daily(
     *,
     history_path: Path | None,
@@ -942,23 +993,13 @@ def _run_daily(
     )
 
     records = load_cycle_history(path=resolved_history)
-    latest_start = records[-1].cycle_start_date
-    print("\n2. Period history", file=output)
-    print(f"   Latest recorded start: {latest_start.isoformat()}", file=output)
-    answer = input_fn("   Did a newer period start? [y/N] ").strip().lower()
-    if answer in {"y", "yes"}:
-        _run_period_recording(
-            history_path=resolved_history,
-            cycle_start_date=None,
-            period_length_days=None,
-            previous_period_length_days=None,
-            recorded_on=resolved_today,
-            assume_yes=False,
-            input_fn=input_fn,
-            output=output,
-        )
-    else:
-        print("   ✓ Period history is current.", file=output)
+    update_daily_period_history(
+        history_path=resolved_history,
+        records=records,
+        recorded_on=resolved_today,
+        input_fn=input_fn,
+        output=output,
+    )
 
     refresh = refresh_daily_model_if_needed(
         history_path=resolved_history,

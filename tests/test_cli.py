@@ -2,6 +2,7 @@
 
 import json
 from datetime import UTC, date, datetime, tzinfo
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -379,6 +380,7 @@ def test_daily_flow_syncs_checks_history_and_forecasts(
     assert received["end_date"] == date(2026, 8, 27)
     assert "One private check-in: sync, record, predict." in captured.out
     assert "Latest recorded start: 2026-08-24" in captured.out
+    assert "Current period remains ongoing" in captured.out
     assert "Existing Phase A model is current" in captured.out
     assert "CURRENT CYCLE" in captured.out
     assert "Cycle day               4" in captured.out
@@ -405,6 +407,40 @@ def test_daily_flow_syncs_checks_history_and_forecasts(
     assert (
         journal_entry["temperature_model_version"] == "stage-aware-temperature-blend-v1"
     )
+
+
+def test_daily_history_check_completes_ongoing_period_duration(
+    tmp_path: Path,
+) -> None:
+    """Fill the newest duration without recording a duplicate cycle start."""
+    history_path = tmp_path / "history.csv"
+    history_path.write_text(
+        "cycle_start_date,period_length_days\n2026-07-27,5\n2026-08-24,\n",
+        encoding="utf-8",
+    )
+    answers = iter(("n", "y", "5", ""))
+    prompts: list[str] = []
+
+    def answer_prompt(prompt: str) -> str:
+        """Finish the current period and confirm its duration update."""
+        prompts.append(prompt)
+        return next(answers)
+
+    output = StringIO()
+    cli.update_daily_period_history(
+        history_path=history_path,
+        records=cli.load_cycle_history(path=history_path),
+        recorded_on=date(2026, 8, 29),
+        input_fn=answer_prompt,
+        output=output,
+    )
+
+    rendered = output.getvalue()
+    assert any(
+        "Has the period that began 2026-08-24 ended?" in item for item in prompts
+    )
+    assert "Period duration    5 days" in rendered
+    assert history_path.read_text(encoding="utf-8").endswith("2026-08-24,5\n")
 
 
 def test_prediction_error_is_concise_and_nonzero(
