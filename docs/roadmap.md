@@ -104,8 +104,9 @@ of a period starting within a future window.
   improves on cycle timing without relying on other wearable signals
 - [x] Add a conservative history-plus-temperature shadow candidate that keeps
   cycle history dominant while allowing temperature to adjust probabilities
-- [ ] Compare or refine wearable features and model formulations only when the
-  walk-forward diagnostics identify a specific weakness worth addressing
+- [x] Refine temperature features after walk-forward diagnostics identify their
+  early-cycle weakness: keep history unchanged through day 10, then evaluate a
+  frozen cutoff-safe temperature-trajectory adjustment
 - [ ] Accumulate enough morning snapshots to evaluate at least three cycles with
   strict prospective retrieval provenance
 

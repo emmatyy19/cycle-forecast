@@ -696,7 +696,10 @@ def _render_wearable_shadow(
             file=output,
         )
     temperature = prediction.temperature_distribution
-    print(f"\n  {'Hybrid candidate':<24}Cycle history + temperature", file=output)
+    print(
+        f"\n  {'Hybrid candidate':<24}Cycle history + temperature trajectory",
+        file=output,
+    )
     print(f"  {'Version':<24}{prediction.temperature_model_version}", file=output)
     print(
         f"  {'Today':<24}{temperature.probability_within(days=1):.1%}",
@@ -1079,6 +1082,11 @@ def _render_training_result(*, result: LocalTrainingResult, output: TextIO) -> N
     print(f"Run manifest   {result.run_path}", file=output)
 
 
+def _wearable_method_width(*, labels: dict[str, str]) -> int:
+    """Reserve a readable method column for every displayed candidate name."""
+    return max(24, *(len(label) + 2 for label in labels.values()))
+
+
 def _render_wearable_evaluation(
     *, result: WearableEvaluationResult, output: TextIO
 ) -> None:
@@ -1132,6 +1140,7 @@ def _render_wearable_evaluation(
     label_aliases = {
         "Empirical cycle hazard": "Cycle history",
         "Cycle history plus temperature": "History + temperature",
+        "Cycle history plus temperature trajectory": "History + temp trajectory",
         "Temperature ablation": "Temperature ablation",
         "Wearable nearest neighbors": "Wearable neighbors",
         "Calibrated discrete survival": "Survival model",
@@ -1139,17 +1148,21 @@ def _render_wearable_evaluation(
     labels = {
         entry.label: label_aliases.get(entry.label, entry.label) for entry in entries
     }
+    method_width = _wearable_method_width(labels=labels)
     print("\nEXACT-DATE SCORES  (lower is better)", file=output)
     print(
         "  Log loss strongly penalizes confident mistakes; Brier is squared "
         "probability error.",
         file=output,
     )
-    print(f"  {'Method':<24}{'Log loss':>12}{'Brier':>12}", file=output)
-    print(f"  {'─' * 48}", file=output)
+    print(
+        f"  {'Method':<{method_width}}{'Log loss':>12}{'Brier':>12}",
+        file=output,
+    )
+    print(f"  {'─' * (method_width + 24)}", file=output)
     for entry in entries:
         print(
-            f"  {labels[entry.label]:<24}"
+            f"  {labels[entry.label]:<{method_width}}"
             f"{entry.mean_logarithmic_loss:>12.3f}"
             f"{entry.mean_multiclass_brier_score:>12.3f}",
             file=output,
@@ -1166,14 +1179,15 @@ def _render_wearable_evaluation(
     print("\nPLANNING-WINDOW BRIER  (lower is better)", file=output)
     print("  Windows include today. Near-zero values may round to 0.000.", file=output)
     print(
-        f"  {'Method':<24}{'Today':>10}{'3 days':>10}{'7 days':>10}{'14 days':>10}",
+        f"  {'Method':<{method_width}}{'Today':>10}{'3 days':>10}"
+        f"{'7 days':>10}{'14 days':>10}",
         file=output,
     )
-    print(f"  {'─' * 64}", file=output)
+    print(f"  {'─' * (method_width + 40)}", file=output)
     for entry in entries:
         scores = entry.mean_window_brier_scores
         print(
-            f"  {labels[entry.label]:<24}"
+            f"  {labels[entry.label]:<{method_width}}"
             f"{scores[1]:>10.3f}{scores[3]:>10.3f}"
             f"{scores[7]:>10.3f}{scores[14]:>10.3f}",
             file=output,
@@ -1182,6 +1196,7 @@ def _render_wearable_evaluation(
     score_headers = {
         "Empirical cycle hazard": "History",
         "Cycle history plus temperature": "Hist+temp",
+        "Cycle history plus temperature trajectory": "Hist+traj",
         "Temperature ablation": "Temp test",
         "Wearable nearest neighbors": "Neighbor",
         "Calibrated discrete survival": "Survival",
@@ -1219,10 +1234,14 @@ def _render_wearable_evaluation(
         )
         print(f"       Ranking: {ranking}", file=output)
     print("\nCYCLE WINS", file=output)
-    print(f"  {'Method':<24}{'Log loss':>12}{'Brier':>12}", file=output)
+    print(
+        f"  {'Method':<{method_width}}{'Log loss':>12}{'Brier':>12}",
+        file=output,
+    )
     for entry in entries:
         print(
-            f"  {labels[entry.label]:<24}{entry.log_loss_cycle_wins:>12}"
+            f"  {labels[entry.label]:<{method_width}}"
+            f"{entry.log_loss_cycle_wins:>12}"
             f"{entry.brier_cycle_wins:>12}",
             file=output,
         )
@@ -1247,14 +1266,14 @@ def _render_wearable_evaluation(
         file=output,
     )
     print(
-        f"  {'Method':<24}{'Actual p avg':>14}{'Actual p min':>14}"
+        f"  {'Method':<{method_width}}{'Actual p avg':>14}{'Actual p min':>14}"
         f"{'Offset bias':>14}{'Offset RMSE':>14}",
         file=output,
     )
-    print(f"  {'─' * 80}", file=output)
+    print(f"  {'─' * (method_width + 56)}", file=output)
     for candidate in diagnostics.candidates:
         print(
-            f"  {labels[candidate.label]:<24}"
+            f"  {labels[candidate.label]:<{method_width}}"
             f"{candidate.mean_actual_outcome_probability:>14.3f}"
             f"{candidate.minimum_actual_outcome_probability:>14.3f}"
             f"{candidate.mean_signed_offset_error:>+14.2f}"
@@ -1265,14 +1284,15 @@ def _render_wearable_evaluation(
     print("\nPLANNING-WINDOW CALIBRATION", file=output)
     print("  Gap = predicted frequency minus observed frequency.", file=output)
     print(
-        f"  {'Method':<24}{'Window':>8}{'Predicted':>12}{'Observed':>12}{'Gap':>10}",
+        f"  {'Method':<{method_width}}{'Window':>8}{'Predicted':>12}"
+        f"{'Observed':>12}{'Gap':>10}",
         file=output,
     )
     for candidate in diagnostics.candidates:
         for window, diagnostic in candidate.calibration.items():
             gap = diagnostic.mean_predicted_probability - diagnostic.observed_fraction
             print(
-                f"  {labels[candidate.label]:<24}{window:>7}d"
+                f"  {labels[candidate.label]:<{method_width}}{window:>7}d"
                 f"{diagnostic.mean_predicted_probability:>12.1%}"
                 f"{diagnostic.observed_fraction:>12.1%}{gap:>+10.1%}",
                 file=output,
@@ -1281,13 +1301,14 @@ def _render_wearable_evaluation(
     print("\nCYCLE-DAY BRIER", file=output)
     print("  Lower is better; counts are evaluated mornings in each band.", file=output)
     print(
-        f"  {'Method':<24}{'Cycle days':>14}{'Mornings':>12}{'Brier':>12}",
+        f"  {'Method':<{method_width}}{'Cycle days':>14}{'Mornings':>12}{'Brier':>12}",
         file=output,
     )
     for candidate in diagnostics.candidates:
         for diagnostic in candidate.cycle_day:
             print(
-                f"  {labels[candidate.label]:<24}{diagnostic.label:>14}"
+                f"  {labels[candidate.label]:<{method_width}}"
+                f"{diagnostic.label:>14}"
                 f"{diagnostic.count:>12}{diagnostic.mean_brier_score:>12.3f}",
                 file=output,
             )

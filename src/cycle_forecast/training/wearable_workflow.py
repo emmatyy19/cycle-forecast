@@ -21,6 +21,7 @@ from cycle_forecast.evaluation.wearable import (
     DailyModelComparison,
     compare_daily_forecasters,
 )
+from cycle_forecast.features.temperature import build_temperature_trajectory_rows
 from cycle_forecast.features.wearable import (
     WearableFeatureRow,
     build_wearable_feature_row,
@@ -33,11 +34,14 @@ from cycle_forecast.forecasting.daily import (
 from cycle_forecast.forecasting.wearable_baselines import (
     EMPIRICAL_HAZARD_BASELINE_VERSION,
     HISTORY_TEMPERATURE_BLEND_VERSION,
+    STAGE_AWARE_TEMPERATURE_BLEND_VERSION,
     TEMPERATURE_NEIGHBOR_BASELINE_VERSION,
     WEARABLE_NEIGHBOR_BASELINE_VERSION,
+    blend_history_with_stage_aware_temperature,
     blend_history_with_temperature,
     forecast_with_empirical_cycle_hazard,
     forecast_with_temperature_neighbors,
+    forecast_with_temperature_trajectory_neighbors,
     forecast_with_wearable_neighbors,
 )
 from cycle_forecast.models.discrete_survival import (
@@ -47,11 +51,12 @@ from cycle_forecast.models.discrete_survival import (
     predict_with_discrete_survival_model,
 )
 
-WEARABLE_EVALUATION_WORKFLOW_VERSION: Final = "wearable-evaluation-v4"
+WEARABLE_EVALUATION_WORKFLOW_VERSION: Final = "wearable-evaluation-v5"
 """Semantic version of local assembly, temporal partitioning, and comparison."""
 
 HISTORY_BASELINE_LABEL: Final = "Empirical cycle hazard"
 HISTORY_TEMPERATURE_LABEL: Final = "Cycle history plus temperature"
+STAGE_AWARE_TEMPERATURE_LABEL: Final = "Cycle history plus temperature trajectory"
 TEMPERATURE_BASELINE_LABEL: Final = "Temperature ablation"
 WEARABLE_BASELINE_LABEL: Final = "Wearable nearest neighbors"
 SURVIVAL_MODEL_LABEL: Final = "Calibrated discrete survival"
@@ -549,6 +554,32 @@ def _evaluate_fold(
             strict=True,
         )
     )
+    trajectory_rows = build_temperature_trajectory_rows(
+        rows=training + calibration + evaluation
+    )
+    prior_trajectory_rows = trajectory_rows[: len(training) + len(calibration)]
+    evaluation_trajectory_rows = trajectory_rows[len(prior_trajectory_rows) :]
+    trajectory_forecasts = tuple(
+        forecast_with_temperature_trajectory_neighbors(
+            row=row,
+            training_rows=prior_trajectory_rows,
+            neighbor_count=neighbor_count,
+        )
+        for row in evaluation_trajectory_rows
+    )
+    stage_aware_forecasts = tuple(
+        blend_history_with_stage_aware_temperature(
+            history=history,
+            temperature_trajectory=temperature,
+            cycle_day=row.aligned.cycle_day,
+        )
+        for history, temperature, row in zip(
+            history_forecasts,
+            trajectory_forecasts,
+            evaluation,
+            strict=True,
+        )
+    )
     model_forecasts = tuple(
         predict_with_discrete_survival_model(model=model, row=row) for row in evaluation
     )
@@ -569,6 +600,12 @@ def _evaluate_fold(
                 label=HISTORY_TEMPERATURE_LABEL,
                 version=HISTORY_TEMPERATURE_BLEND_VERSION,
                 forecasts=history_temperature_forecasts,
+                outcome_offsets=outcomes,
+            ),
+            DailyForecastCandidate(
+                label=STAGE_AWARE_TEMPERATURE_LABEL,
+                version=STAGE_AWARE_TEMPERATURE_BLEND_VERSION,
+                forecasts=stage_aware_forecasts,
                 outcome_offsets=outcomes,
             ),
             DailyForecastCandidate(
@@ -615,6 +652,11 @@ def _evaluate_fold(
                     HISTORY_TEMPERATURE_LABEL,
                     HISTORY_TEMPERATURE_BLEND_VERSION,
                     history_temperature_forecasts,
+                ),
+                (
+                    STAGE_AWARE_TEMPERATURE_LABEL,
+                    STAGE_AWARE_TEMPERATURE_BLEND_VERSION,
+                    stage_aware_forecasts,
                 ),
                 (
                     TEMPERATURE_BASELINE_LABEL,

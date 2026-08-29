@@ -5,11 +5,14 @@ from datetime import UTC, date, datetime, timedelta
 import pytest
 
 from cycle_forecast.data.wearable_alignment import AlignedDailyObservation
+from cycle_forecast.features.temperature import build_temperature_trajectory_rows
 from cycle_forecast.features.wearable import WEARABLE_FEATURE_NAMES, WearableFeatureRow
 from cycle_forecast.forecasting.wearable_baselines import (
+    blend_history_with_stage_aware_temperature,
     blend_history_with_temperature,
     forecast_with_empirical_cycle_hazard,
     forecast_with_temperature_neighbors,
+    forecast_with_temperature_trajectory_neighbors,
     forecast_with_wearable_neighbors,
 )
 
@@ -124,6 +127,44 @@ def test_history_temperature_blend_preserves_history_as_dominant_signal() -> Non
                 row=_row(index=4, outcome=None, signal=10.0, temperature=0.4),
                 completed_cycle_lengths=(27, 28, 29, 30),
             ),
+        )
+
+
+def test_stage_aware_trajectory_keeps_early_history_and_blends_later() -> None:
+    """Gate recent temperature-pattern influence until the frozen cycle day."""
+    wearable_rows = (
+        _row(index=0, outcome=3, signal=10.0, temperature=0.1),
+        _row(index=1, outcome=2, signal=20.0, temperature=0.2),
+        _row(index=3, outcome=None, signal=30.0, temperature=0.4),
+    )
+    trajectories = build_temperature_trajectory_rows(rows=wearable_rows)
+    history = forecast_with_empirical_cycle_hazard(
+        row=wearable_rows[-1],
+        completed_cycle_lengths=(27, 28, 29, 30),
+    )
+    temperature = forecast_with_temperature_trajectory_neighbors(
+        row=trajectories[-1],
+        training_rows=trajectories[:-1],
+    )
+
+    early = blend_history_with_stage_aware_temperature(
+        history=history,
+        temperature_trajectory=temperature,
+        cycle_day=10,
+    )
+    later = blend_history_with_stage_aware_temperature(
+        history=history,
+        temperature_trajectory=temperature,
+        cycle_day=11,
+    )
+
+    assert early == history
+    assert later.daily_probabilities != history.daily_probabilities
+    with pytest.raises(ValueError, match="positive"):
+        blend_history_with_stage_aware_temperature(
+            history=history,
+            temperature_trajectory=temperature,
+            cycle_day=0,
         )
     with pytest.raises(ValueError, match="between zero and one"):
         blend_history_with_temperature(
