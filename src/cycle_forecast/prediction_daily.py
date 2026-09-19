@@ -151,6 +151,7 @@ def predict_daily_from_history(
         raise ValueError("prediction_cutoff must be timezone-aware")
     if cutoff.astimezone(timezone).date() != prediction_date:
         raise ValueError("prediction_cutoff must fall on prediction_date")
+    cutoff = cutoff.astimezone(timezone)
     distribution = forecast_with_empirical_cycle_hazard_context(
         cycle_day=cycle_day,
         prediction_date=prediction_date,

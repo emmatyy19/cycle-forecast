@@ -1,6 +1,6 @@
 """Tests for today's baseline-first probability forecast."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -39,6 +39,26 @@ def test_predict_daily_distribution_from_completed_cycle_starts(tmp_path: Path) 
     assert sum(probabilities) == pytest.approx(1.0)
     assert prediction.distribution.probability_within(days=3) <= (
         prediction.distribution.probability_within(days=14)
+    )
+
+
+def test_prediction_cutoff_is_stored_in_forecast_timezone(tmp_path: Path) -> None:
+    """Keep late-evening UTC cutoffs on the matching local forecast date."""
+    history_path = tmp_path / "history.csv"
+    history_path.write_text(
+        "cycle_start_date,period_length_days\n2024-12-01,5\n2025-01-01,\n",
+        encoding="utf-8",
+    )
+
+    prediction = predict_daily_from_history(
+        history_path=history_path,
+        prediction_date=date(2025, 1, 1),
+        timezone_name="America/New_York",
+        prediction_cutoff=datetime(2025, 1, 2, 2, tzinfo=UTC),
+    )
+
+    assert prediction.distribution.prediction_cutoff.isoformat() == (
+        "2025-01-01T21:00:00-05:00"
     )
 
 
